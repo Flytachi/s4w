@@ -1,0 +1,29 @@
+{
+    "name": "project/s4w",
+    "description": "My Project s4w",
+    "type": "project",
+    "license": "MIT",
+    "scripts": {
+        "dev-server": "@php -S 0.0.0.0:8000 -t ./public"
+    },
+    "autoload": {
+        "psr-4": {
+            "Api\\": "api/",
+            "Io\\": "io/",
+            "Main\\": "main/"
+        }
+    },
+    "require": {
+        "php": ">=8.3",
+        "flytachi/winter-kernel": "^3.0",
+        "flytachi/jwt": "^1.0",
+        "ext-redis": "*",
+        "ext-gd": "*",
+        "ext-fileinfo": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "@stable",
+        "monolog/monolog": "@stable"
+    },
+    "authors": []
+}
