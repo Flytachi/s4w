@@ -2,6 +2,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         instances: [],
         selectedInstanceId: new URLSearchParams(window.location.search).get('storage') || '',
+        selectedSection: null,
+        fileSearch: '',
+        fileSearchTimer: null,
     };
 
     const tokenKey = 's4w_jwt';
@@ -18,9 +21,20 @@ document.addEventListener('DOMContentLoaded', () => {
     window.showAlert = showAlert;
     window.toggleFrozen = id => showTokenModal(id);
     window.downloadFile = id => window.open(apiPath(`/s4w/instances/${state.selectedInstanceId}/media/${id}`), '_blank');
+    window.previewFile = (id, name) => showFilePreviewModal(id, name);
+    window.deleteFile = (id, name) => showFileDeleteModal(id, name);
 
     if (searchInput) {
         searchInput.addEventListener('input', () => {
+            if (document.getElementById('file-list')) {
+                state.fileSearch = searchInput.value;
+                if (state.fileSearchTimer) clearTimeout(state.fileSearchTimer);
+                state.fileSearchTimer = setTimeout(() => {
+                    const inst = state.instances.find(item => item.id === state.selectedInstanceId);
+                    if (inst) renderFiles(inst);
+                }, 300);
+                return;
+            }
             const term = searchInput.value.trim().toLowerCase();
             document.querySelectorAll('[data-search]').forEach(item => {
                 item.hidden = term !== '' && !item.dataset.search.includes(term);
@@ -227,6 +241,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const instance = state.instances.find(item => item.id === state.selectedInstanceId);
         renderFileInstanceCard(instance);
+
+        if (searchInput) {
+            searchInput.value = state.fileSearch;
+            searchInput.placeholder = 'Поиск по имени файла...';
+        }
+
         await renderFiles(instance);
     }
 
@@ -252,22 +272,43 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderFiles(instance) {
         const list = document.getElementById('file-list');
         const crumbs = document.getElementById('file-breadcrumbs');
-        crumbs.innerHTML = `<button type="button">root</button>`;
+        const section = state.selectedSection;
+        const search = state.fileSearch.trim();
+        crumbs.innerHTML = section
+            ? `<button type="button" onclick="openSection(null)">root</button><span class="crumb-sep">/</span><button type="button" class="crumb-current">${escapeHtml(section)}</button>`
+            : `<button type="button" class="crumb-current">root</button>`;
         list.innerHTML = emptyBlock('Загрузка файлов через API...');
 
         try {
-            const sections = await safeApi(`/s4w/instances/${instance.id}/files/sections`);
-            const files = await safeApi(`/s4w/instances/${instance.id}/files?limit=50&page=1`);
-            const folders = Array.isArray(sections?.list) ? sections.list : Array.isArray(sections) ? sections : [];
+            const params = new URLSearchParams({ limit: '50', page: '1' });
+            if (section) params.set('section', section);
+            if (search) params.set('search', search);
+            const files = await safeApi(`/s4w/instances/${instance.id}/files?${params.toString()}`);
             const items = Array.isArray(files?.list) ? files.list : Array.isArray(files) ? files : [];
+
+            let folders = [];
+            if (!section && !search) {
+                const sections = await safeApi(`/s4w/instances/${instance.id}/files/sections`);
+                folders = Array.isArray(sections?.list) ? sections.list : Array.isArray(sections) ? sections : [];
+            }
+
+            const emptyMsg = search
+                ? `Ничего не найдено по запросу «${search}»`
+                : (section ? 'Папка пуста' : 'Файлы не найдены');
             list.innerHTML = [
                 ...folders.map(folderRow),
                 ...items.map(fileRow),
-            ].join('') || emptyBlock('Файлы не найдены');
+            ].join('') || emptyBlock(emptyMsg);
         } catch (error) {
             list.innerHTML = emptyBlock('File API пока не отвечает для выбранного instance');
         }
     }
+
+    window.openSection = name => {
+        state.selectedSection = name || null;
+        const instance = state.instances.find(item => item.id === state.selectedInstanceId);
+        if (instance) renderFiles(instance);
+    };
 
     async function safeApi(path) {
         try {
@@ -281,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function folderRow(folder) {
         const name = typeof folder === 'string' ? folder : folder.name;
         return `
-            <div class="file-row folder" data-search="${escapeAttr(name)}">
+            <div class="file-row folder is-clickable" data-search="${escapeAttr(name)}" onclick="openSection('${escapeAttr(name)}')">
                 <i class="fas fa-folder"></i>
                 <span>${escapeHtml(name)}</span>
                 <small>Секция</small>
@@ -301,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
             jpg: 'fa-file-image', jpeg: 'fa-file-image', png: 'fa-file-image', gif: 'fa-file-image',
             webp: 'fa-file-image', svg: 'fa-file-image', bmp: 'fa-file-image', ico: 'fa-file-image', avif: 'fa-file-image',
             mp3: 'fa-file-audio', wav: 'fa-file-audio', ogg: 'fa-file-audio', flac: 'fa-file-audio', m4a: 'fa-file-audio', aac: 'fa-file-audio',
-            mp4: 'fa-file-video', mov: 'fa-file-video', avi: 'fa-file-video', mkv: 'fa-file-video', webm: 'fa-file-video', flv: 'fa-file-video',
+            mp4: 'fa-film', mov: 'fa-clapperboard', avi: 'fa-video', mkv: 'fa-photo-film', webm: 'fa-circle-play', flv: 'fa-video',
             zip: 'fa-file-zipper', rar: 'fa-file-zipper', '7z': 'fa-file-zipper', tar: 'fa-file-zipper', gz: 'fa-file-zipper', bz2: 'fa-file-zipper', xz: 'fa-file-zipper',
             txt: 'fa-file-lines', md: 'fa-file-lines', log: 'fa-file-lines',
             js: 'fa-file-code', mjs: 'fa-file-code', ts: 'fa-file-code', tsx: 'fa-file-code', jsx: 'fa-file-code',
@@ -323,9 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <i class="fas ${fileIconClass(name)}"></i>
                 <span>${escapeHtml(name)}</span>
                 <small>${formatBytes(size)} · ${formatDate(file.updatedAt || file.updated_at || file.createdAt || file.created_at)}</small>
-                <button class="btn btn-secondary download-btn" onclick="downloadFile('${escapeAttr(id)}')">
-                    <i class="fas fa-download"></i>Скачать
-                </button>
+                <div class="row-actions">
+                    <button class="icon-btn glass-btn" title="Удалить" onclick="deleteFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button class="icon-btn glass-btn" title="Скачать" onclick="downloadFile('${escapeAttr(id)}')">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button class="icon-btn glass-btn" title="Просмотр" onclick="previewFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
             </div>
         `;
     }
@@ -522,17 +571,37 @@ document.addEventListener('DOMContentLoaded', () => {
             <h3>Загрузить файл</h3>
             <form id="file-upload-form" class="admin-form">
                 <div class="form-group">
-                    <label>Имя</label>
-                    <input name="name" class="glass-input" required>
-                </div>
-                <div class="form-group">
-                    <label>Файл</label>
+                    <label>Файл <span class="required-mark" title="Обязательное поле">*</span></label>
                     <input id="upload-file-input" name="file" type="file" class="file-native-input" required>
                     <button id="upload-file-trigger" class="file-picker-btn" type="button">
                         <i class="fas fa-folder-open"></i>
-                        <span>Выбрать файл</span>
+                        <span id="upload-file-label">Выбрать файл</span>
                     </button>
-                    <div id="upload-file-name" class="file-picker-name">Файл не выбран</div>
+                </div>
+                <div class="form-divider"><span>Опциональные параметры</span></div>
+                <div class="form-group">
+                    <label>Имя</label>
+                    <input name="name" class="glass-input" placeholder="Оставьте пустым, чтобы использовать имя файла">
+                </div>
+                <div class="form-group">
+                    <label>Секция (папка)</label>
+                    <input name="section" class="glass-input" list="upload-section-options"
+                        pattern="^[A-Za-z0-9][A-Za-z0-9_\-]{0,99}$"
+                        placeholder="Опционально. Латиница, цифры, _ и -">
+                    <datalist id="upload-section-options"></datalist>
+                </div>
+                <div class="form-group">
+                    <label class="range-label">
+                        <span>Сжатие изображения</span>
+                        <span id="upload-compress-value" class="range-value">Без сжатия</span>
+                    </label>
+                    <input id="upload-compress-input" name="compress" type="range" min="0" max="100" step="1" value="0" class="range-input">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input name="webp" type="checkbox" value="1">
+                        <span>Конвертировать в WebP</span>
+                    </label>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
@@ -542,24 +611,183 @@ document.addEventListener('DOMContentLoaded', () => {
         `);
 
         const fileInput = document.getElementById('upload-file-input');
-        const fileName = document.getElementById('upload-file-name');
+        const fileLabel = document.getElementById('upload-file-label');
+        const compressInput = document.getElementById('upload-compress-input');
+        const compressValue = document.getElementById('upload-compress-value');
+        const sectionList = document.getElementById('upload-section-options');
+        safeApi(`/s4w/instances/${state.selectedInstanceId}/files/sections`).then(res => {
+            const items = Array.isArray(res?.list) ? res.list : Array.isArray(res) ? res : [];
+            sectionList.innerHTML = items
+                .map(s => `<option value="${escapeAttr(typeof s === 'string' ? s : s.name)}"></option>`)
+                .join('');
+        }).catch(() => {});
         document.getElementById('upload-file-trigger').addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', () => {
-            fileName.textContent = fileInput.files[0]?.name || 'Файл не выбран';
+            const f = fileInput.files[0];
+            fileLabel.textContent = f ? `${f.name} · ${formatBytes(f.size)}` : 'Выбрать файл';
         });
+        const renderCompress = () => {
+            const v = Number(compressInput.value);
+            compressValue.textContent = v === 0 ? 'Без сжатия' : `${v}%`;
+        };
+        compressInput.addEventListener('input', renderCompress);
+        renderCompress();
 
         document.getElementById('file-upload-form').addEventListener('submit', async event => {
             event.preventDefault();
             const form = event.currentTarget;
             const data = new FormData(form);
             const file = data.get('file');
+            const name = String(data.get('name') || '').trim();
+            const section = String(data.get('section') || '').trim();
+            const compress = Number(data.get('compress') || 0);
+            const webp = data.get('webp') === '1';
             const body = new FormData();
-            body.set('name', data.get('name'));
+            if (name) body.set('name', name);
+            if (section) body.set('section', section);
             body.set('file', file);
+            if (compress > 0) body.set('compress', String(compress));
+            if (webp) body.set('webp', '1');
             await apiJson(`/s4w/instances/${state.selectedInstanceId}/files`, { method: 'POST', body });
             closeModal();
-            showAlert('success', 'Файл загружен', String(data.get('name')));
+            showAlert('success', 'Файл загружен', name || (file && file.name) || 'OK');
             await renderFiles(state.instances.find(item => item.id === state.selectedInstanceId));
+        });
+    }
+
+    function isImageExt(ext) {
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'].includes(ext);
+    }
+
+    function isPdfExt(ext) {
+        return ext === 'pdf';
+    }
+
+    function isVideoExt(ext) {
+        return ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+    }
+
+    function isAudioExt(ext) {
+        return ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext);
+    }
+
+    function isTextExt(ext) {
+        return [
+            'txt', 'md', 'log', 'csv', 'tsv',
+            'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'env',
+            'js', 'mjs', 'ts', 'tsx', 'jsx', 'html', 'htm', 'css', 'scss', 'sass',
+            'php', 'py', 'rb', 'go', 'rs', 'java', 'kt', 'swift', 'c', 'h', 'cpp', 'hpp',
+            'cs', 'sh', 'bash', 'sql',
+        ].includes(ext);
+    }
+
+    function extOf(name) {
+        const dot = String(name || '').lastIndexOf('.');
+        return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
+    }
+
+    async function showFilePreviewModal(id, name) {
+        if (!state.selectedInstanceId) {
+            showAlert('warning', 'Instance не выбран', 'Выберите instance для предпросмотра');
+            return;
+        }
+        openModal(`
+            <h3><i class="fas ${fileIconClass(name)}"></i> ${escapeHtml(name)}</h3>
+            <div class="file-preview-body" id="file-preview-body">
+                <div class="file-preview-fallback">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p>Загрузка...</p>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
+                <button class="btn btn-primary" onclick="downloadFile('${escapeAttr(id)}')">
+                    <i class="fas fa-download"></i>Скачать
+                </button>
+            </div>
+        `);
+
+        const container = document.getElementById('file-preview-body');
+        try {
+            const response = await fetch(apiPath(`/s4w/instances/${state.selectedInstanceId}/media/${id}`), {
+                headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` },
+            });
+            if (response.status === 401 || response.status === 403) {
+                localStorage.removeItem(tokenKey);
+                window.location.href = '/web/auth';
+                return;
+            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            state.previewBlobUrl = blobUrl;
+
+            const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
+            const ext = extOf(name);
+            let inner;
+            if (contentType.startsWith('image/') || isImageExt(ext)) {
+                inner = `<img src="${escapeAttr(blobUrl)}" alt="${escapeAttr(name)}" class="file-preview-image">`;
+            } else if (contentType === 'application/pdf' || isPdfExt(ext)) {
+                inner = `<iframe src="${escapeAttr(blobUrl)}" class="file-preview-frame" title="${escapeAttr(name)}"></iframe>`;
+            } else if (contentType.startsWith('video/') || isVideoExt(ext)) {
+                inner = `<video src="${escapeAttr(blobUrl)}" controls class="file-preview-image"></video>`;
+            } else if (contentType.startsWith('audio/') || isAudioExt(ext)) {
+                inner = `<audio src="${escapeAttr(blobUrl)}" controls></audio>`;
+            } else if (ext === 'md' || ext === 'markdown' || contentType.includes('markdown')) {
+                const text = await blob.text();
+                const html = (typeof marked !== 'undefined')
+                    ? marked.parse(text, { gfm: true, breaks: true })
+                    : escapeHtml(text);
+                const safe = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : html;
+                inner = `<div class="file-preview-markdown markdown-body">${safe}</div>`;
+            } else if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('xml') || contentType.includes('yaml') || isTextExt(ext)) {
+                const text = await blob.text();
+                inner = `<pre class="file-preview-text">${escapeHtml(text)}</pre>`;
+            } else {
+                inner = `
+                    <div class="file-preview-fallback">
+                        <i class="fas ${fileIconClass(name)} fa-3x"></i>
+                        <p>Предпросмотр недоступен для этого типа файла.</p>
+                    </div>
+                `;
+            }
+            if (container) container.innerHTML = inner;
+        } catch (error) {
+            if (container) {
+                container.innerHTML = `
+                    <div class="file-preview-fallback">
+                        <i class="fas fa-triangle-exclamation fa-2x"></i>
+                        <p>${escapeHtml(error.message || 'Не удалось загрузить файл')}</p>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    function showFileDeleteModal(id, name) {
+        if (!state.selectedInstanceId) {
+            showAlert('warning', 'Instance не выбран', 'Выберите instance для удаления');
+            return;
+        }
+        openModal(`
+            <h3><i class="fas ${fileIconClass(name)}"></i> Удалить файл?</h3>
+            <p class="modal-text">Файл <b>${escapeHtml(name)}</b> будет удалён. Это действие нельзя отменить.</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-danger" id="confirm-file-delete-btn">Удалить</button>
+            </div>
+        `);
+
+        document.getElementById('confirm-file-delete-btn').addEventListener('click', async () => {
+            try {
+                await apiJson(`/s4w/instances/${state.selectedInstanceId}/files/${id}`, { method: 'DELETE' });
+                closeModal();
+                showAlert('success', 'Файл удалён', name);
+                await renderFiles(state.instances.find(item => item.id === state.selectedInstanceId));
+            } catch (error) {
+                showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить файл');
+            }
         });
     }
 
@@ -580,6 +808,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeModal() {
         document.querySelector('.modal-overlay')?.remove();
+        if (state.previewBlobUrl) {
+            URL.revokeObjectURL(state.previewBlobUrl);
+            state.previewBlobUrl = null;
+        }
     }
 
     function showAlert(type, title, message) {

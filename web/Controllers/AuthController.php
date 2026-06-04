@@ -1,6 +1,5 @@
 <?php
 
-namespace Main\Controllers\Web;
 
 use Flytachi\Winter\Base\HttpCode;
 use Flytachi\Winter\K2\Http\Response\ResponseEntity;

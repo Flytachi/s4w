@@ -31,7 +31,7 @@ require '../bootstrap.php';
            f. Route dispatch            O(1) static map → chunked regex dynamic scan
            g. Per-route #[CrossOrigin]  overrides global CORS if present
            h. Middleware before()       run in declaration order
-           i. Controller method         resolved via ReflectionCache + ParameterResolver
+           i. Controllers method         resolved via ReflectionCache + ParameterResolver
            j. Middleware after()        run in reverse order
            k. Response serialise        Sendable::send() or ResponseEntity::ok()->send()
            l. Error handling            ExceptionWrapper maps Throwable → HTTP response

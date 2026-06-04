@@ -1,6 +1,5 @@
 <?php
 
-namespace Main\Controllers\Web;
 
 use Flytachi\Winter\K2\Http\Response\ResponseView;
 use Flytachi\Winter\K2\Route\Annotation\GetMapping;
