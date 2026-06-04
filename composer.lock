@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6275eb275106804dc97aace96a7b261a",
+    "content-hash": "0bbdd9ba2e47008bd7974e04d066de8f",
     "packages": [
         {
             "name": "flytachi/file-store",
@@ -3108,7 +3108,7 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": ">=8.3",
+        "php": ">=8.5",
         "ext-redis": "*",
         "ext-gd": "*",
         "ext-fileinfo": "*"

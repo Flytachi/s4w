@@ -93,7 +93,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const query = new URLSearchParams({ limit: '100', page: '1' });
         if (searchInput?.value.trim()) query.set('search', searchInput.value.trim());
         const data = await apiJson(`/s4w/instances?${query.toString()}`);
-        return Array.isArray(data.list) ? data.list : [];
+        return listOf(data);
+    }
+
+    function listOf(res) {
+        if (!res) return [];
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res.data)) return res.data;
+        if (Array.isArray(res.list)) return res.list;
+        return [];
     }
 
     async function apiJson(path, options = {}) {
@@ -284,12 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (section) params.set('section', section);
             if (search) params.set('search', search);
             const files = await safeApi(`/s4w/instances/${instance.id}/files?${params.toString()}`);
-            const items = Array.isArray(files?.list) ? files.list : Array.isArray(files) ? files : [];
+            const items = listOf(files);
 
             let folders = [];
             if (!section && !search) {
                 const sections = await safeApi(`/s4w/instances/${instance.id}/files/sections`);
-                folders = Array.isArray(sections?.list) ? sections.list : Array.isArray(sections) ? sections : [];
+                folders = listOf(sections);
             }
 
             const emptyMsg = search
@@ -519,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderTokens(instanceId) {
         const target = document.getElementById('token-list');
         const data = await apiJson(`/s4w/instances/${instanceId}/tokens?limit=50&page=1`);
-        const tokens = Array.isArray(data.list) ? data.list : [];
+        const tokens = listOf(data);
         target.innerHTML = tokens.map(token => `
             <div class="file-row" data-search="${escapeAttr(token.name)}">
                 <i class="fas fa-key"></i>
@@ -616,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const compressValue = document.getElementById('upload-compress-value');
         const sectionList = document.getElementById('upload-section-options');
         safeApi(`/s4w/instances/${state.selectedInstanceId}/files/sections`).then(res => {
-            const items = Array.isArray(res?.list) ? res.list : Array.isArray(res) ? res : [];
+            const items = listOf(res);
             sectionList.innerHTML = items
                 .map(s => `<option value="${escapeAttr(typeof s === 'string' ? s : s.name)}"></option>`)
                 .join('');

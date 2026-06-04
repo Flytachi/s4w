@@ -2,9 +2,7 @@
 
 namespace Main\Controllers;
 
-use Flytachi\Winter\K2\Http\Adapter\FpmRequest;
 use Flytachi\Winter\K2\Http\Contracts\HttpRequest;
-use Flytachi\Winter\K2\Http\Header;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestJson;
 use Flytachi\Winter\K2\Http\Request\Validation\Valid;
 use Flytachi\Winter\K2\Http\Response\ResponseEntity;

@@ -10,7 +10,8 @@
         "psr-4": {
             "Api\\": "api/",
             "Io\\": "io/",
-            "Main\\": "main/"
+            "Main\\": "main/",
+            "Web\\": "web/"
         }
     },
     "require": {
