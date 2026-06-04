@@ -22,6 +22,9 @@ class InstanceTokenMiddleware extends Middleware
     #[Autowired]
     private AuthContext $auth;
 
+    #[Autowired]
+    private CacheService $cache;
+
     public function before(HttpRequest $request, HttpResponse $response): void
     {
         $token = Header::getBearerToken();
@@ -29,8 +32,15 @@ class InstanceTokenMiddleware extends Middleware
             MiddlewareException::throw('Token required');
         }
 
-        $model = $this->repo->where(Qb::eq('hash', TokenGenerator::hash($token)))->find();
+        $hash = TokenGenerator::hash($token);
 
+        $cachedInstanceId = $this->cache->getToken($hash);
+        if ($cachedInstanceId !== null) {
+            $this->auth->setInstanceId($cachedInstanceId);
+            return;
+        }
+
+        $model = $this->repo->where(Qb::eq('hash', $hash))->find();
         if (!$model) {
             MiddlewareException::throw('Invalid token');
         }
@@ -38,6 +48,7 @@ class InstanceTokenMiddleware extends Middleware
             MiddlewareException::throw('Token is inactive');
         }
 
+        $this->cache->putToken($hash, $model->instance_id);
         $this->auth->setInstanceId($model->instance_id);
     }
 }

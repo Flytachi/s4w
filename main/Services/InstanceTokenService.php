@@ -8,7 +8,9 @@ use Flytachi\Winter\DI\Attribute\Autowired;
 use Flytachi\Winter\K2\Exception\ClientError;
 use Flytachi\Winter\K2\Exception\ServerError;
 use Flytachi\Winter\K2\Stereotype\Service;
+use Flytachi\Winter\K2\Unit\Pagination\WrapResult;
 use Flytachi\Winter\K2\Unit\Wrapper;
+use Api\CacheService;
 use Main\Dto\TokenGenerator;
 use Main\Dto\TokenRes;
 use Main\Dto\TokenStatus;
@@ -26,6 +28,9 @@ class InstanceTokenService extends Service
     #[Autowired]
     private InstanceService $instanceService;
 
+    #[Autowired]
+    private CacheService $cache;
+
     public function validate(string $instanceId, string $token): TokenRes
     {
         $hash = TokenGenerator::hash($token);
@@ -39,12 +44,15 @@ class InstanceTokenService extends Service
         return TokenRes::from($model);
     }
 
-    public function getAll(string $instanceId, ListRequest $request): array
+    public function getAll(string $instanceId, ListRequest $request): WrapResult
     {
         $this->repo->where(Qb::eq('instance_id', $instanceId));
-        $wrapper = Wrapper::paginator($this->repo, $request->limit, $request->page);
-        $wrapper['list'] = array_map(fn($item) => TokenRes::from($item), $wrapper['list']);
-        return $wrapper;
+        return Wrapper::paginator(
+            $this->repo,
+            $request->limit,
+            $request->page,
+            mapper: fn($item) => TokenRes::from($item),
+        );
     }
 
     public function get(string $id, ?string $instanceId = null): InstanceToken
@@ -83,10 +91,12 @@ class InstanceTokenService extends Service
     public function regenerate(string $instanceId, string $id): array
     {
         $model = $this->get($id, $instanceId);
+        $oldHash = $model->hash;
         $generated = $this->generateToken();
 
         $model->hash = $generated['hash'];
         $this->repo->update($model, Qb::eq('id', $id));
+        $this->cache->forgetToken($oldHash);
 
         return [
             'id' => $model->id,
@@ -103,6 +113,7 @@ class InstanceTokenService extends Service
         }
         $model->status = $status->value;
         $this->repo->update($model, Qb::eq('id', $id));
+        $this->cache->forgetToken($model->hash);
     }
 
     /**

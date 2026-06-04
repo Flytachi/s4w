@@ -3,6 +3,7 @@
 namespace Api;
 
 use Flytachi\Winter\DI\Attribute\Autowired;
+use Flytachi\Winter\K2\Http\Contracts\HttpRequest;
 use Flytachi\Winter\K2\Http\Request\Annotation\PathVariable;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestFile;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestForm;
@@ -40,9 +41,10 @@ class FileController extends Controller
     #[GetMapping]
     public function list(
         #[RequestQuery, Valid] FileListRequest $request,
+        HttpRequest $http,
     ): ResponseEntity {
         return ResponseEntity::ok(
-            $this->service->getAll($this->auth->instanceId(), $request)
+            $this->service->getAll($this->auth->instanceId(), $request, $http->getBaseUrl())
         );
     }
 
@@ -50,12 +52,14 @@ class FileController extends Controller
     public function create(
         #[RequestFile('file', maxSize: '100MB')] array $file,
         #[RequestForm, Valid] FileRequest $form,
+        HttpRequest $http,
     ): ResponseEntity {
         return ResponseEntity::created(
             $this->service->upload(
                 $this->auth->instanceId(),
                 $file,
                 $form,
+                $http->getBaseUrl(),
             )
         );
     }
@@ -63,9 +67,10 @@ class FileController extends Controller
     #[GetMapping('{id}')]
     public function get(
         #[PathVariable, Uuid] string $id,
+        HttpRequest $http,
     ): ResponseEntity {
         return ResponseEntity::ok(
-            $this->service->getOne($this->auth->instanceId(), $id)
+            $this->service->getOne($this->auth->instanceId(), $id, $http->getBaseUrl())
         );
     }
 

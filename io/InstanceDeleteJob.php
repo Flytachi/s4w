@@ -5,7 +5,6 @@ namespace Io;
 use Flytachi\Winter\Cdo\Qb;
 use Flytachi\Winter\DI\Attribute\Autowired;
 use Flytachi\Winter\K2\Stereotype\Job;
-use Main\Dto\InstanceStatus;
 use Main\Entities\Instance;
 use Main\Repositories\InstanceRepository;
 
@@ -20,35 +19,36 @@ class InstanceDeleteJob extends Job
             if (is_string($data)) {
                 $data = $this->repo->where(Qb::eq('id', $data))->find();
             }
+            if ($data === null) {
+                // уже удалён — идемпотентный no-op
+                return;
+            }
             $this->delete($data);
         } else {
             $this->logger->error('Invalid data provided: ' . json_encode($data));
         }
     }
 
+    /**
+     * Порядок намеренный: DB → FS.
+     *  - Сначала удаляем row инстанса. CASCADE FK уносит file_records / file_blobs / instance_tokens.
+     *    Если упадём здесь — файлы целы, БД консистентна.
+     *  - Потом удаляем папку. Если упадём здесь — БД консистентна, на диске orphan-папка.
+     *    Её подберёт фоновый GC ({@see \Io\Scripts\OrphanFolderGc}).
+     *
+     * Идемпотентен: rmdir сейчас no-op на отсутствующей папке; repo->delete с тем же id
+     * вернёт 0 affected rows.
+     */
     private function delete(Instance $instance): void
     {
-        if ($instance->status === InstanceStatus::PENDING->value) {
-            throw new \Exception('Invalid instance status provided: ' . InstanceStatus::from($instance->status)->name);
-        }
-
         try {
-            $this->repo->update(
-                ['status' => InstanceStatus::PENDING->value, 'updated_at' => date('Y-m-d H:i:s P')],
-                Qb::eq('id', $instance->id)
-            );
+            $this->repo->delete(Qb::eq('id', $instance->id));
 
             $manager = new FileManager();
             $manager->rmdir($instance->id);
-
-            $this->repo->delete(Qb::eq('id', $instance->id));
-
         } catch (\Throwable $e) {
-            $this->repo->update(
-                ['status' => InstanceStatus::INACTIVE->value, 'updated_at' => date('Y-m-d H:i:s P')],
-                Qb::eq('id', $instance->id)
-            );
-            $this->logger->error('Failed to delete instance status: ' . $e->getMessage());
+            $this->logger->error('Failed to delete instance: ' . $e->getMessage());
+            throw $e;
         }
     }
 }

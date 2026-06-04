@@ -5,6 +5,7 @@ namespace Main\Services;
 use Flytachi\Winter\Cdo\Qb;
 use Flytachi\Winter\DI\Attribute\Autowired;
 use Flytachi\Winter\K2\Stereotype\Service;
+use Flytachi\Winter\K2\Unit\Pagination\WrapResult;
 use Flytachi\Winter\K2\Unit\Wrapper;
 use Io\InstanceCreateJob;
 use Io\InstanceDeleteJob;
@@ -19,7 +20,7 @@ class InstanceService extends Service
     #[Autowired]
     private InstanceRepository $repo;
 
-    public function getAll(ListRequest $request): array
+    public function getAll(ListRequest $request): WrapResult
     {
         if ($request->search) {
             $this->repo->where(Qb::or(
@@ -28,9 +29,12 @@ class InstanceService extends Service
             ));
         }
 
-        $wrapper = Wrapper::paginator($this->repo, $request->limit, $request->page);
-        $wrapper['list'] = array_map(fn($item) => InstanceRes::from($item), $wrapper['list']);
-        return $wrapper;
+        return Wrapper::paginator(
+            $this->repo,
+            $request->limit,
+            $request->page,
+            mapper: fn($item) => InstanceRes::from($item)
+        );
     }
 
     public function get(string $id): Instance

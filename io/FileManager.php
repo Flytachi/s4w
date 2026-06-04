@@ -29,8 +29,11 @@ final class FileManager
     public function rmdir(string $folderName): void
     {
         $this->currentPath .= '/' . $folderName;
+        if (!is_dir($this->currentPath)) {
+            return;
+        }
         flushDirectory($this->currentPath, $this->currentPath);
-        rmdir($this->currentPath);
+        @rmdir($this->currentPath);
     }
 
     private function checkRoot(): void

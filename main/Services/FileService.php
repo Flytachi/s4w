@@ -8,6 +8,7 @@ use Flytachi\Winter\Cdo\Qb;
 use Flytachi\Winter\DI\Attribute\Autowired;
 use Flytachi\Winter\K2\Exception\ClientError;
 use Flytachi\Winter\K2\Stereotype\Service;
+use Flytachi\Winter\K2\Unit\Pagination\WrapResult;
 use Flytachi\Winter\K2\Unit\Wrapper;
 use Io\FileManager;
 use Main\Dto\FileRes;
@@ -36,6 +37,7 @@ class FileService extends Service
         string $instanceId,
         array $file,
         FileRequest $form,
+        string $baseUrl,
     ): FileRes {
         $tmpPath = $file['tmp_name'] ?? null;
         if (!$tmpPath || !is_file($tmpPath)) {
@@ -52,12 +54,19 @@ class FileService extends Service
         $processedPath = $this->processImage($tmpPath, $mime, $form);
         $processedIsOwned = $processedPath !== $tmpPath;
 
-        // post-processing → реальный mime/расширение (вне транзакции, на $form->...)
         if ($form->webp && str_starts_with($mime, 'image/') && $mime !== 'image/webp') {
             $mime = 'image/webp';
             $finalName = $this->replaceExtension($finalName, 'webp');
         }
-        $extension = $this->extractExtension($finalName);
+
+        // extension у blob'а — характеристика контента. Источник истины — mime
+        // (детектируется по байтам через finfo). Имя файла из multipart — это
+        // user-input, может врать (photo.png внутри JPEG). Используем его только
+        // как fallback, если mime неизвестный.
+        $extension = $this->mimeToExtension($mime);
+        if ($extension === '') {
+            $extension = $this->extractExtension($sourceName);
+        }
 
         $hash = hash_file('sha256', $processedPath);
         $size = (int) filesize($processedPath);
@@ -118,21 +127,47 @@ class FileService extends Service
                 );
             }
 
-            // авто-суффикс при коллизии имени в этой секции/корне
-            $finalName = $this->resolveNameCollision($instanceId, $section, $finalName);
-
             $record = new FileRecord();
             $record->instance_id = $instanceId;
             $record->section = $section;
             $record->blob_id = $blob->id;
-            $record->name = $finalName;
             $record->created_at = date('Y-m-d H:i:s P');
             $record->updated_at = $record->created_at;
-            $record->id = $this->recordRepo->insert($record);
 
+            // SAVEPOINT-retry: на UNIQUE(instance_id, [section,] name) возможна гонка
+            // с параллельным upload'ом того же имени. SELECT-based pre-check race-prone
+            // (между SELECT и INSERT окно), поэтому пробуем INSERT и при 23505
+            // откатываемся к savepoint'у и инкрементим суффикс.
+            $baseName = $finalName;
+            $candidate = $finalName;
+            $inserted = false;
+            for ($i = 0; $i < 10; $i++) {
+                $record->name = $candidate;
+                $db->exec('SAVEPOINT s4w_rec_ins');
+                try {
+                    $record->id = $this->recordRepo->insert($record);
+                    $db->exec('RELEASE SAVEPOINT s4w_rec_ins');
+                    $inserted = true;
+                    $finalName = $candidate;
+                    break;
+                } catch (\Throwable $e) {
+                    if (!$this->isUniqueViolation($e)) {
+                        // не наша гонка — внешний catch откатит транзакцию целиком
+                        throw $e;
+                    }
+                    $db->exec('ROLLBACK TO SAVEPOINT s4w_rec_ins');
+                    $candidate = $this->suffixed($baseName, $i + 1);
+                }
+            }
+            if (!$inserted) {
+                ClientError::throw(
+                    'Name conflict, retry limit exceeded',
+                    HttpCode::CONFLICT,
+                );
+            }
             $db->commit();
 
-            return $this->buildRes($instanceId, $record, $blob, $deduplicated);
+            return $this->buildRes($instanceId, $record, $blob, $deduplicated, $baseUrl);
         } catch (\Throwable $e) {
             if ($db->inTransaction()) {
                 $db->rollBack();
@@ -160,7 +195,11 @@ class FileService extends Service
 
     private function processImage(string $srcPath, string $mime, FileRequest $form): string
     {
-        $needsCompress = $form->compress !== null;
+        // compress: 0|null — без сжатия, 100 — максимальное.
+        // Внутри GD ожидает quality: 100 — без потерь, 0 — максимально пожатый.
+        // Инвертируем: quality = 100 - compress.
+        $compress = max(0, min(100, $form->compress ?? 0));
+        $needsCompress = $compress > 0;
         $needsWebp = $form->webp;
 
         if (!$needsCompress && !$needsWebp) {
@@ -196,7 +235,7 @@ class FileService extends Service
         }
 
         $outPath = $srcPath . '.processed';
-        $quality = $form->compress ?? 80;
+        $quality = $needsCompress ? 100 - $compress : 80;
 
         $ok = $needsWebp
             ? imagewebp($im, $outPath, $quality)
@@ -207,7 +246,6 @@ class FileService extends Service
                 'image/gif'  => imagegif($im, $outPath),
                 default      => false,
             };
-        imagedestroy($im);
 
         if (!$ok || !is_file($outPath) || filesize($outPath) === 0) {
             @unlink($outPath);
@@ -225,32 +263,19 @@ class FileService extends Service
         return 9 - (int) round($quality / 100 * 9);
     }
 
-    private function resolveNameCollision(string $instanceId, ?string $section, string $name): string
+    /**
+     * Распознаёт UNIQUE-violation (SQLSTATE 23505 для PostgreSQL).
+     * Идём по цепочке previous до PDOException — Repository оборачивает
+     * CDOException, тот оборачивает PDOException.
+     */
+    private function isUniqueViolation(\Throwable $e): bool
     {
-        $candidate = $name;
-        $i = 1;
-        while ($this->nameExists($instanceId, $section, $candidate)) {
-            $candidate = $this->suffixed($name, $i);
-            $i++;
+        for ($cur = $e; $cur !== null; $cur = $cur->getPrevious()) {
+            if ($cur instanceof \PDOException && (string) $cur->getCode() === '23505') {
+                return true;
+            }
         }
-        return $candidate;
-    }
-
-    private function nameExists(string $instanceId, ?string $section, string $name): bool
-    {
-        $where = $section === null
-            ? Qb::and(
-                Qb::eq('instance_id', $instanceId),
-                Qb::isNull('section'),
-                Qb::eq('name', $name),
-            )
-            : Qb::and(
-                Qb::eq('instance_id', $instanceId),
-                Qb::eq('section', $section),
-                Qb::eq('name', $name),
-            );
-        $this->recordRepo->where($where);
-        return $this->recordRepo->count() > 0;
+        return false;
     }
 
     private function suffixed(string $name, int $i): string
@@ -271,6 +296,34 @@ class FileService extends Service
         return substr($name, $dot + 1);
     }
 
+    private function mimeToExtension(string $mime): string
+    {
+        return match ($mime) {
+            'image/jpeg'                                                              => 'jpg',
+            'image/png'                                                               => 'png',
+            'image/gif'                                                               => 'gif',
+            'image/webp'                                                              => 'webp',
+            'image/svg+xml'                                                           => 'svg',
+            'image/bmp'                                                               => 'bmp',
+            'image/tiff'                                                              => 'tiff',
+            'application/pdf'                                                         => 'pdf',
+            'application/zip'                                                         => 'zip',
+            'application/gzip'                                                        => 'gz',
+            'application/json'                                                        => 'json',
+            'application/xml', 'text/xml'                                             => 'xml',
+            'application/msword'                                                      => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/vnd.ms-excel'                                                => 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'       => 'xlsx',
+            'text/plain'                                                              => 'txt',
+            'text/csv'                                                                => 'csv',
+            'text/html'                                                               => 'html',
+            'audio/mpeg'                                                              => 'mp3',
+            'video/mp4'                                                               => 'mp4',
+            default                                                                   => '',
+        };
+    }
+
     private function replaceExtension(string $name, string $newExt): string
     {
         $dot = strrpos($name, '.');
@@ -282,11 +335,11 @@ class FileService extends Service
     //  GET ONE / LIST / DELETE
     // ───────────────────────────────────────────────────────────────────────
 
-    public function getOne(string $instanceId, string $id): FileRes
+    public function getOne(string $instanceId, string $id, string $baseUrl): FileRes
     {
         $record = $this->findRecord($instanceId, $id);
         $blob = $this->findBlob($record->blob_id);
-        return $this->buildRes($instanceId, $record, $blob, deduplicated: false);
+        return $this->buildRes($instanceId, $record, $blob, deduplicated: false, baseUrl: $baseUrl);
     }
 
     /**
@@ -305,7 +358,7 @@ class FileService extends Service
         return array_map(fn($r) => $r->section, $rows);
     }
 
-    public function getAll(string $instanceId, FileListRequest $request): array
+    public function getAll(string $instanceId, FileListRequest $request, string $baseUrl): WrapResult
     {
         $where = [Qb::eq('instance_id', $instanceId)];
         $where[] = $request->section !== null
@@ -316,12 +369,56 @@ class FileService extends Service
         }
         $this->recordRepo->where(Qb::and(...$where));
 
-        $wrapper = Wrapper::paginator($this->recordRepo, $request->limit, $request->page);
-        $wrapper['list'] = array_map(
-            fn(FileRecord $r) => $this->buildRes($instanceId, $r, $this->findBlob($r->blob_id), false),
-            $wrapper['list'],
+        $page = Wrapper::paginator(
+            $this->recordRepo,
+            $request->limit,
+            $request->page,
         );
-        return $wrapper;
+
+        if ($page->data === []) {
+            return $page;
+        }
+
+        // Batch-load blob'ов одним IN-запросом вместо N findBlob() в маппере.
+        // array_unique — потому что несколько FileRecord могут ссылаться на один
+        // и тот же FileBlob (дедупликация по hash).
+        $blobIds = array_values(array_unique(
+            array_map(fn(FileRecord $r) => $r->blob_id, $page->data)
+        ));
+        $blobMap = $this->loadBlobsByIds($blobIds);
+
+        return new WrapResult(
+            meta: $page->meta,
+            data: array_map(
+                fn(FileRecord $r) => $this->buildRes(
+                    $instanceId,
+                    $r,
+                    $blobMap[$r->blob_id]
+                        ?? throw new \RuntimeException("Blob missing for record {$r->id}"),
+                    false,
+                    $baseUrl,
+                ),
+                $page->data,
+            ),
+        );
+    }
+
+    /**
+     * @param string[] $ids
+     * @return array<string, FileBlob>
+     */
+    private function loadBlobsByIds(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $this->blobRepo->where(Qb::in('id', $ids));
+        $blobs = $this->blobRepo->findAll();
+        $map = [];
+        foreach ($blobs as $b) {
+            $map[$b->id] = $b;
+        }
+        return $map;
     }
 
     /**
@@ -432,8 +529,13 @@ class FileService extends Service
         return $blob;
     }
 
-    private function buildRes(string $instanceId, FileRecord $record, FileBlob $blob, bool $deduplicated): FileRes
-    {
+    private function buildRes(
+        string $instanceId,
+        FileRecord $record,
+        FileBlob $blob,
+        bool $deduplicated,
+        string $baseUrl,
+    ): FileRes {
         return new FileRes(
             id: $record->id,
             name: $record->name,
@@ -444,18 +546,19 @@ class FileService extends Service
             hash: $blob->hash,
             deduplicated: $deduplicated,
             createdAt: $record->created_at,
-            url: $this->buildUrl($instanceId, $record->section, $record->id),
+            url: $this->buildUrl($instanceId, $record->section, $record->id, $baseUrl),
         );
     }
 
     /**
      * URL для запроса файла обратно. Клиент должен слать Bearer токен.
-     *   root:    {APP_URL}/media/{id}
-     *   section: {APP_URL}/media/{section}/{id}
+     *   root:    {baseUrl}/media/{id}
+     *   section: {baseUrl}/media/{section}/{id}
+     * Под admin-mode (path-based scoping) добавляется префикс /s4w/instances/{id}.
      */
-    private function buildUrl(string $instanceId, ?string $section, string $id): string
+    private function buildUrl(string $instanceId, ?string $section, string $id, string $baseUrl): string
     {
-        $base = rtrim((string) env('APP_URL', ''), '/');
+        $base = rtrim($baseUrl, '/');
         $path = $section === null
             ? '/media/' . $id
             : '/media/' . rawurlencode($section) . '/' . $id;

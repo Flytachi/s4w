@@ -1,0 +1,14 @@
+services:
+  server:
+    network_mode: bridge
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DISABLE_OPCACHE: "true"
+    environment:
+      - COMPOSE_BAKE=true
+    ports:
+      - "8007:80"
+    volumes:
+      - ./:/var/www/html/

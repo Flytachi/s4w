@@ -3,6 +3,7 @@
 namespace Main\Controllers;
 
 use Flytachi\Winter\DI\Attribute\Autowired;
+use Flytachi\Winter\K2\Http\Contracts\HttpRequest;
 use Flytachi\Winter\K2\Http\Request\Annotation\PathVariable;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestFile;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestForm;
@@ -40,19 +41,21 @@ class FileController extends Controller
     #[GetMapping]
     public function list(
         #[PathVariable, Uuid] string $instanceId,
-        #[RequestQuery, Valid] FileListRequest $request
+        #[RequestQuery, Valid] FileListRequest $request,
+        HttpRequest $http,
     ): ResponseEntity {
         $this->service->adminModeOn();
         return ResponseEntity::ok(
-            $this->service->getAll($instanceId, $request)
+            $this->service->getAll($instanceId, $request, $http->getBaseUrl())
         );
     }
 
     #[PostMapping]
     public function create(
         #[PathVariable, Uuid] string $instanceId,
-        #[RequestFile('file', maxSize: '100MB')] array $file,
+        #[RequestFile('file')] array $file,
         #[RequestForm, Valid] FileRequest $form,
+        HttpRequest $http,
     ): ResponseEntity {
         $this->service->adminModeOn();
         return ResponseEntity::created(
@@ -60,6 +63,7 @@ class FileController extends Controller
                 $instanceId,
                 $file,
                 $form,
+                $http->getBaseUrl(),
             )
         );
     }
@@ -68,10 +72,11 @@ class FileController extends Controller
     public function get(
         #[PathVariable, Uuid] string $instanceId,
         #[PathVariable, Uuid] string $id,
+        HttpRequest $http,
     ): ResponseEntity {
         $this->service->adminModeOn();
         return ResponseEntity::ok(
-            $this->service->getOne($instanceId, $id)
+            $this->service->getOne($instanceId, $id, $http->getBaseUrl())
         );
     }
 

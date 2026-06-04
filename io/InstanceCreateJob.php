@@ -26,18 +26,13 @@ class InstanceCreateJob extends Job
         }
     }
 
+    /**
+     * Идемпотентен: mkdir уже no-op если папка есть, UPDATE→ACTIVE — тоже.
+     * Любой повторный запуск из CREATED/INACTIVE спокойно доводит до ACTIVE.
+     */
     private function create(Instance $instance): void
     {
-        if ($instance->status === InstanceStatus::PENDING->value) {
-            throw new \Exception('Invalid instance status provided: ' . InstanceStatus::from($instance->status)->name);
-        }
-
         try {
-            $this->repo->update(
-                ['status' => InstanceStatus::PENDING->value, 'updated_at' => date('Y-m-d H:i:s P')],
-                Qb::eq('id', $instance->id)
-            );
-
             $manager = new FileManager();
             $manager->mkdir($instance->id);
 
@@ -50,7 +45,8 @@ class InstanceCreateJob extends Job
                 ['status' => InstanceStatus::INACTIVE->value, 'updated_at' => date('Y-m-d H:i:s P')],
                 Qb::eq('id', $instance->id)
             );
-            $this->logger->error('Failed to update instance status: ' . $e->getMessage());
+            $this->logger->error('Failed to create instance: ' . $e->getMessage());
+            throw $e;
         }
     }
 }

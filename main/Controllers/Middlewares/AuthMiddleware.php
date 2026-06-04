@@ -23,7 +23,7 @@ class AuthMiddleware extends Middleware
 
         try {
             $payload = JWT::decode($jwt,
-                [new PublicKey(env('JWT_SECRET', ''), 'HS256')]
+                [new PublicKey(env('WINTER_KEY', ''), 'HS256')]
             );
             if (!$this->validateToken($payload->getClaim('sub'))) {
                 MiddlewareException::throw('Invalid token data');
@@ -39,10 +39,6 @@ class AuthMiddleware extends Middleware
 
     private function validateToken(array $sub): bool
     {
-        return $sub['user'] === env('ADMIN_LOGIN')
-            && $sub['ip'] === Header::getIpAddress()
-            && $sub['agent'] === Header::getUserAgent();
-//            && $sub['origin'] == Header::getOrigin()
-//            && $sub['referer'] == Header::getReferer();
+        return $sub['user'] === env('ADMIN_LOGIN');
     }
 }

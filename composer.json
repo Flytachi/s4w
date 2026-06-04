@@ -1,5 +1,5 @@
 {
-    "name": "project/s4w",
+    "name": "flytachi/s4w",
     "description": "My Project s4w",
     "type": "project",
     "license": "MIT",
@@ -14,7 +14,7 @@
         }
     },
     "require": {
-        "php": ">=8.3",
+        "php": ">=8.5",
         "flytachi/winter-kernel": "^3.0",
         "flytachi/jwt": "^1.0",
         "ext-redis": "*",
