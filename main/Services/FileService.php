@@ -44,6 +44,19 @@ class FileService extends Service
             ClientError::throw('Upload tmp file missing', HttpCode::BAD_REQUEST);
         }
 
+        // App-level лимит размера. Единый источник правды — env UPLOAD_MAX_FILESIZE
+        // (тот же, что docker entrypoint выставляет в php.ini и nginx). Здесь даёт
+        // явный 413 с понятным сообщением; PHP-уровень (upload_max_filesize) —
+        // жёсткая стена на тот же лимит.
+        $maxBytes = $this->maxUploadBytes();
+        $incomingSize = (int) (filesize($tmpPath) ?: ($file['size'] ?? 0));
+        if ($maxBytes > 0 && $incomingSize > $maxBytes) {
+            ClientError::throw(
+                'File exceeds upload limit of ' . env('UPLOAD_MAX_FILESIZE', '100M'),
+                HttpCode::REQUEST_ENTITY_TOO_LARGE,
+            );
+        }
+
         $section = $form->section; // просто строка, без резолва в БД
 
         $sourceName = (string) ($file['name'] ?? '');
@@ -64,9 +77,28 @@ class FileService extends Service
         // user-input, может врать (photo.png внутри JPEG). Используем его только
         // как fallback, если mime неизвестный.
         $extension = $this->mimeToExtension($mime);
-        if ($extension === '') {
+        // finfo для текстовых форматов почти всегда отдаёт text/plain и НЕ различает
+        // csv/tsv/json/xml/md/... — по байтам это просто текст, поэтому csv → txt.
+        // Для text/plain доверяем расширению исходного имени (если оно конкретнее
+        // txt) и уточняем по нему mime.
+        if ($mime === 'text/plain') {
+            $srcExt = strtolower($this->extractExtension($sourceName));
+            if ($srcExt !== '' && $srcExt !== 'txt') {
+                $extension = $srcExt;
+                $mappedMime = $this->extensionToMime($srcExt);
+                if ($mappedMime !== '') {
+                    $mime = $mappedMime;
+                }
+            }
+        } elseif ($extension === '') {
             $extension = $this->extractExtension($sourceName);
         }
+
+        // Display-name должен нести расширение, иначе скачивание даёт файл без него.
+        // Если пользователь задал имя без расширения (или сгенерили random) —
+        // дописываем определённое по контенту. Имя с уже имеющимся расширением
+        // не трогаем (в т.ч. webp-конвертацию выше).
+        $finalName = $this->ensureExtension($finalName, $extension);
 
         $hash = hash_file('sha256', $processedPath);
         $size = (int) filesize($processedPath);
@@ -182,6 +214,26 @@ class FileService extends Service
                 @unlink($processedPath);
             }
         }
+    }
+
+    /**
+     * Лимит загрузки в байтах из env UPLOAD_MAX_FILESIZE.
+     * Формат PHP-shorthand: '100M', '2G', '500K' или чистые байты. 0 — без лимита.
+     * Бинарные единицы (1K = 1024), как у PHP ini.
+     */
+    private function maxUploadBytes(): int
+    {
+        $raw = trim((string) env('UPLOAD_MAX_FILESIZE', '100M'));
+        if ($raw === '' || !preg_match('/^(\d+(?:\.\d+)?)\s*([KMGkmg]?)/', $raw, $m)) {
+            return 0;
+        }
+        $value = (float) $m[1];
+        return (int) match (strtoupper($m[2])) {
+            'K'     => $value * 1024,
+            'M'     => $value * 1024 * 1024,
+            'G'     => $value * 1024 * 1024 * 1024,
+            default => $value,
+        };
     }
 
     private function detectMime(string $path): string
@@ -322,6 +374,43 @@ class FileService extends Service
             'video/mp4'                                                               => 'mp4',
             default                                                                   => '',
         };
+    }
+
+    /**
+     * Обратное к mimeToExtension для текстовых форматов, которые finfo не различает
+     * (видит как text/plain). Возвращает '' если уточнения нет.
+     */
+    private function extensionToMime(string $ext): string
+    {
+        return match (strtolower($ext)) {
+            'csv'            => 'text/csv',
+            'tsv'            => 'text/tab-separated-values',
+            'json'           => 'application/json',
+            'xml'            => 'application/xml',
+            'md', 'markdown' => 'text/markdown',
+            'html', 'htm'    => 'text/html',
+            'yaml', 'yml'    => 'application/yaml',
+            'css'            => 'text/css',
+            'js', 'mjs'      => 'text/javascript',
+            default          => '',
+        };
+    }
+
+    /**
+     * Гарантирует, что имя оканчивается на корректное (по контенту) расширение.
+     * Если уже оканчивается на него — оставляем (db.sql + sql → db.sql).
+     * Иначе дописываем (db.sq + sql → db.sq.sql; report + csv → report.csv).
+     * Пустой $ext (контент не распознан) — no-op.
+     */
+    private function ensureExtension(string $name, string $ext): string
+    {
+        if ($ext === '') {
+            return $name;
+        }
+        if (strtolower($this->extractExtension($name)) === strtolower($ext)) {
+            return $name;
+        }
+        return $name . '.' . $ext;
     }
 
     private function replaceExtension(string $name, string $newExt): string

@@ -8,6 +8,7 @@ services:
         DISABLE_OPCACHE: "true"
     environment:
       - COMPOSE_BAKE=true
+      - UPLOAD_MAX_FILESIZE=200M
     ports:
       - "8007:80"
     volumes:

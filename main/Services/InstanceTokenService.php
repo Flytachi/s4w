@@ -116,6 +116,13 @@ class InstanceTokenService extends Service
         $this->cache->forgetToken($model->hash);
     }
 
+    public function delete(string $instanceId, string $id): void
+    {
+        $model = $this->get($id, $instanceId);
+        $this->repo->delete(Qb::eq('id', $id));
+        $this->cache->forgetToken($model->hash);
+    }
+
     /**
      * @return array{token: string, hash: string}
      */

@@ -38,7 +38,7 @@ $currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/web/main', PHP_URL_PATH) ?
                 <li class="<?= str_starts_with($currentPath, '/web/main') ? 'active' : '' ?>" data-page="overview"><a href="/web/main"><i class="fas fa-chart-pie"></i><span>Обзор</span></a></li>
 <!--                <li class="--><?php //= str_starts_with($currentPath, '/web/clients') ? 'active' : '' ?><!--" data-page="clients"><a href="/web/clients"><i class="fas fa-building"></i><span>Клиенты</span></a></li>-->
                 <li class="<?= str_starts_with($currentPath, '/web/storages') ? 'active' : '' ?>" data-page="storages"><a href="/web/storages"><i class="fas fa-server"></i><span>Хранилища</span></a></li>
-<!--                <li class="--><?php //= str_starts_with($currentPath, '/web/files') ? 'active' : '' ?><!--" data-page="files"><a href="/web/files"><i class="fas fa-folder-open"></i><span>Файлы</span></a></li>-->
+                <li class="<?= str_starts_with($currentPath, '/web/files') ? 'active' : '' ?>" data-page="files"><a href="/web/files"><i class="fas fa-folder-open"></i><span>Файлы</span></a></li>
                 <li class="<?= str_starts_with($currentPath, '/web/analytics') ? 'active' : '' ?>" data-page="analytics"><a href="/web/analytics"><i class="fas fa-chart-line"></i><span>Аналитика</span></a></li>
             </ul>
         </nav>

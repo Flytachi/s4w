@@ -50,7 +50,7 @@ class FileController extends Controller
 
     #[PostMapping]
     public function create(
-        #[RequestFile('file', maxSize: '100MB')] array $file,
+        #[RequestFile('file')] array $file,
         #[RequestForm, Valid] FileRequest $form,
         HttpRequest $http,
     ): ResponseEntity {

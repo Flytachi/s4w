@@ -11,6 +11,7 @@ use Flytachi\Winter\K2\Http\Request\Validation\NotBlank;
 use Flytachi\Winter\K2\Http\Request\Validation\Uuid;
 use Flytachi\Winter\K2\Http\Request\Validation\Valid;
 use Flytachi\Winter\K2\Http\Response\ResponseEntity;
+use Flytachi\Winter\K2\Route\Annotation\DeleteMapping;
 use Flytachi\Winter\K2\Route\Annotation\GetMapping;
 use Flytachi\Winter\K2\Route\Annotation\PatchMapping;
 use Flytachi\Winter\K2\Route\Annotation\PostMapping;
@@ -76,6 +77,15 @@ class InstanceTokenController extends Controller
         #[PathVariable] TokenStatus $status,
     ): ResponseEntity {
         $this->service->changeStatus($instanceId, $id, $status);
+        return ResponseEntity::accepted();
+    }
+
+    #[DeleteMapping('{id}')]
+    public function delete(
+        #[PathVariable, Uuid] string $instanceId,
+        #[PathVariable, Uuid] string $id,
+    ): ResponseEntity {
+        $this->service->delete($instanceId, $id);
         return ResponseEntity::accepted();
     }
 }

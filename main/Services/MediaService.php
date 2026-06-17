@@ -72,10 +72,35 @@ class MediaService extends Service
         }
 
         return ResponseFile::binary(
-            data: FileManager::blobRead($blob->instance_id, $blob->hash),
-            fileName: $record->name,
+            data: '',
+            fileName: $this->ensureNameExtension($record->name, $blob->extension),
             mimeType: $blob->mime_type,
             isAttachment: false,
-        );
+        )->header('X-Accel-Redirect', $this->internalUri($blob->instance_id, $blob->hash));
+    }
+
+    /**
+     * При отдаче: если в имени нет расширения — дописываем расширение blob'а.
+     * Страховка (в т.ч. для старых записей, сохранённых без расширения в имени).
+     * Если расширение уже есть — не трогаем.
+     */
+    private function ensureNameExtension(string $name, string $ext): string
+    {
+        if ($ext === '') {
+            return $name;
+        }
+        $dot = strrpos($name, '.');
+        $hasExt = $dot !== false && $dot !== strlen($name) - 1;
+        return $hasExt ? $name : $name . '.' . $ext;
+    }
+
+    /**
+     * Внутренний URI для X-Accel-Redirect. Соответствует `internal`-локации
+     * `/internal/chest/` в nginx. Сегменты безопасны для пути: instanceId —
+     * UUID, hash — hex sha256 (оба без слешей и спецсимволов).
+     */
+    private function internalUri(string $instanceId, string $hash): string
+    {
+        return '/internal/' . FileManager::ROOT_FOLDER . '/' . $instanceId . '/' . $hash;
     }
 }

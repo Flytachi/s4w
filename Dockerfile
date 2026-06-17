@@ -58,12 +58,13 @@ RUN if [ "$DISABLE_OPCACHE" = "false" ]; then \
 
 # Create service directories and scripts
 RUN mkdir -p /etc/service/syslog /etc/service/php-fpm /etc/service/nginx
-RUN printf '#!/bin/sh\nexec syslogd -n -O /dev/stdout\n' > /etc/service/syslog/run \
-    && chmod +x /etc/service/syslog/run
 RUN printf '#!/bin/sh\nwhile [ ! -S /dev/log ]; do sleep 1; done\nexec php-fpm85 -F\n' > /etc/service/php-fpm/run \
     && chmod +x /etc/service/php-fpm/run
 RUN printf '#!/bin/sh\nwhile [ ! -S /dev/log ]; do sleep 1; done\nexec nginx -g "daemon off;"\n' > /etc/service/nginx/run \
     && chmod +x /etc/service/nginx/run
+# Logger - syslog
+RUN printf '#!/bin/sh\nexec syslogd -n -O /dev/stdout\n' > /etc/service/syslog/run \
+    && chmod +x /etc/service/syslog/run
 
 # Copy vendor from builder (composer not included)
 COPY --from=builder /var/www/html/vendor ./vendor
@@ -79,5 +80,9 @@ RUN chown -R winter:nginx /var/www/html \
 # bash
 RUN ./call cfg completion -if
 
+# Entrypoint: применяет env-лимиты (UPLOAD_MAX_FILESIZE) до запуска runit
+COPY ./docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 80
-ENTRYPOINT ["runsvdir", "/etc/service"]
+ENTRYPOINT ["/entrypoint.sh"]

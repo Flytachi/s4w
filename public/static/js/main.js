@@ -20,7 +20,55 @@ document.addEventListener('DOMContentLoaded', () => {
     window.closeModal = closeModal;
     window.showAlert = showAlert;
     window.toggleFrozen = id => showTokenModal(id);
-    window.downloadFile = id => window.open(apiPath(`/s4w/instances/${state.selectedInstanceId}/media/${id}`), '_blank');
+    window.editInstance = id => showInstanceEditModal(id);
+    let openMenu = null;
+    let openMenuHome = null; // {parent, nextSibling} — куда вернуть портал
+
+    const closeAllDropdowns = () => {
+        if (openMenu) {
+            openMenu.classList.remove('open');
+            openMenu.style.left = '';
+            openMenu.style.top = '';
+            if (openMenuHome?.parent) {
+                openMenuHome.parent.insertBefore(openMenu, openMenuHome.nextSibling);
+            }
+            openMenu = null;
+            openMenuHome = null;
+        }
+    };
+    window.toggleDropdown = event => {
+        event.stopPropagation();
+        const btn = event.currentTarget;
+        const menu = btn.nextElementSibling;
+        const wasOpen = menu === openMenu;
+        closeAllDropdowns();
+        if (wasOpen) return;
+
+        // Портал в body: у .glass-предков есть backdrop-filter, который делает их
+        // containing block'ом для position:fixed — меню улетает. В body таких
+        // предков нет, координаты считаются от вьюпорта корректно. Заодно это
+        // решает обрезку overflow-контейнером таблицы (.table-wrap).
+        openMenuHome = { parent: menu.parentNode, nextSibling: menu.nextSibling };
+        document.body.appendChild(menu);
+        openMenu = menu;
+        menu.classList.add('open');
+
+        const rect = btn.getBoundingClientRect();
+        const width = menu.offsetWidth || 188;
+        const height = menu.offsetHeight;
+        const left = Math.max(8, rect.right - width);
+        let top = rect.bottom + 6;
+        if (top + height > window.innerHeight - 8) {
+            top = Math.max(8, rect.top - height - 6);
+        }
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+    };
+    // Закрытие: клик вне, скролл (в т.ч. внутренних контейнеров — capture), ресайз.
+    document.addEventListener('click', closeAllDropdowns);
+    document.addEventListener('scroll', closeAllDropdowns, true);
+    window.addEventListener('resize', closeAllDropdowns);
+    window.downloadFile = (id, name) => downloadFileBlob(id, name);
     window.previewFile = (id, name) => showFilePreviewModal(id, name);
     window.deleteFile = (id, name) => showFileDeleteModal(id, name);
 
@@ -79,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (hasAny(['overview-stats', 'client-grid', 'storage-rows', 'file-instance-select', 'analytics-stats'])) {
+            showInitialLoaders();
             state.instances = await loadInstances();
         }
 
@@ -87,6 +136,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('storage-rows')) renderStorages();
         if (document.getElementById('file-instance-select')) await renderFilesPage();
         if (document.getElementById('analytics-stats')) renderAnalytics();
+    }
+
+    function showInitialLoaders() {
+        ['overview-stats', 'analytics-stats', 'client-grid'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = spinnerBlock('Загрузка данных через API...');
+        });
+        ['overview-instance-rows', 'storage-rows'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = spinnerRow(7, 'Загрузка через API...');
+        });
     }
 
     async function loadInstances() {
@@ -174,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const pct = percent(used, quota);
             const name = escapeHtml(instance.name);
             return `
-                <article class="client-card glass" data-search="${escapeAttr(`${instance.name} ${instance.description}`)}">
+                <article class="client-card glass" data-search="${searchKey(`${instance.name} ${instance.description}`)}">
                     <div class="client-top">
                         <div class="client-avatar">${escapeHtml(initials(instance.name))}</div>
                         <span class="status-badge ${statusClass(instance)}">${escapeHtml(statusName(instance))}</span>
@@ -204,8 +264,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const quota = bytes(instance).quota;
         const pct = percent(used, quota);
         return `
-            <tr data-search="${escapeAttr(`${instance.name} ${instance.description}`)}">
-                <td><strong>${escapeHtml(instance.name)}</strong><small>${escapeHtml(instance.id)}</small></td>
+            <tr data-search="${searchKey(`${instance.name} ${instance.description}`)}">
+                <td><strong>${escapeHtml(instance.name)}</strong></td>
                 <td>${escapeHtml(instance.description || '')}</td>
                 <td>
                     <div class="quota-cell">
@@ -213,14 +273,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="progress"><span style="width:${pct}%"></span></div>
                     </div>
                 </td>
-                <td><span class="status-badge ${statusClass(instance)}">${escapeHtml(statusName(instance))}</span></td>
+                <td class="col-center"><span class="status-badge ${statusClass(instance)}">${escapeHtml(statusName(instance))}</span></td>
                 <td>${formatDate(instance.createdAt)}</td>
                 <td>${formatDate(instance.updatedAt)}</td>
-                <td>
+                <td class="col-right">
                     <div class="row-actions">
-                        <a class="icon-btn-sm" title="Файлы" href="/web/files?storage=${encodeURIComponent(instance.id)}"><i class="fas fa-folder-open"></i></a>
                         <button class="icon-btn-sm" title="Токены" onclick="toggleFrozen('${escapeAttr(instance.id)}')"><i class="fas fa-key"></i></button>
-                        <button class="icon-btn-sm" title="Удалить" onclick="deleteInstance('${escapeAttr(instance.id)}')"><i class="fas fa-trash"></i></button>
+                        <a class="icon-btn-sm" title="Файлы" href="/web/files?storage=${encodeURIComponent(instance.id)}"><i class="fas fa-folder-open"></i></a>
+                        <div class="dropdown">
+                            <button class="icon-btn-sm" title="Настройки" onclick="toggleDropdown(event)"><i class="fas fa-gear"></i></button>
+                            <div class="dropdown-menu">
+                                <button type="button" onclick="editInstance('${escapeAttr(instance.id)}')"><i class="fas fa-pen"></i>Редактировать</button>
+                                <button type="button" class="danger" onclick="deleteInstance('${escapeAttr(instance.id)}')"><i class="fas fa-trash"></i>Удалить</button>
+                            </div>
+                        </div>
                     </div>
                 </td>
             </tr>
@@ -236,25 +302,43 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!state.selectedInstanceId || !state.instances.some(item => item.id === state.selectedInstanceId)) {
-            state.selectedInstanceId = state.instances[0].id;
-        }
+        // selectedInstanceId приходит из ?storage= (переход по кнопке хранилища).
+        // По переходу из сайдбара (/web/files без параметра) ничего не выбрано —
+        // пользователь должен сам выбрать хранилище.
+        const valid = state.selectedInstanceId
+            && state.instances.some(item => item.id === state.selectedInstanceId);
+        if (!valid) state.selectedInstanceId = '';
 
-        select.innerHTML = state.instances.map(item => `
+        const placeholder = `<option value="" ${state.selectedInstanceId ? '' : 'selected'}>— Выберите хранилище —</option>`;
+        select.innerHTML = placeholder + state.instances.map(item => `
             <option value="${escapeAttr(item.id)}" ${item.id === state.selectedInstanceId ? 'selected' : ''}>${escapeHtml(item.name)}</option>
         `).join('');
         select.addEventListener('change', () => {
-            window.location.href = `/web/files?storage=${encodeURIComponent(select.value)}`;
+            window.location.href = select.value
+                ? `/web/files?storage=${encodeURIComponent(select.value)}`
+                : '/web/files';
         });
-
-        const instance = state.instances.find(item => item.id === state.selectedInstanceId);
-        renderFileInstanceCard(instance);
 
         if (searchInput) {
             searchInput.value = state.fileSearch;
             searchInput.placeholder = 'Поиск по имени файла...';
         }
 
+        // Ничего не выбрано — приглашаем выбрать хранилище.
+        if (!state.selectedInstanceId) {
+            document.getElementById('file-instance-card').innerHTML = `
+                <div class="file-empty-pick">
+                    <i class="fas fa-hand-pointer"></i>
+                    <p>Выберите хранилище в списке выше, чтобы увидеть его файлы и секции.</p>
+                </div>
+            `;
+            document.getElementById('file-breadcrumbs').innerHTML = '';
+            document.getElementById('file-list').innerHTML = emptyBlock('Хранилище не выбрано');
+            return;
+        }
+
+        const instance = state.instances.find(item => item.id === state.selectedInstanceId);
+        renderFileInstanceCard(instance);
         await renderFiles(instance);
     }
 
@@ -263,18 +347,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const quota = bytes(instance).quota;
         const pct = percent(used, quota);
         document.getElementById('file-instance-card').innerHTML = `
-            <h3>${escapeHtml(instance.name)}</h3>
-            <p>${escapeHtml(instance.description || '')}</p>
-            <div class="storage-state ${statusName(instance) !== 'ACTIVE' ? 'is-frozen' : ''}">
-                <i class="fas fa-${statusName(instance) === 'ACTIVE' ? 'lock-open' : 'lock'}"></i>
-                <span>${escapeHtml(statusName(instance))}</span>
+            <div class="fi-head">
+                <div class="fi-avatar">${escapeHtml(initials(instance.name))}</div>
+                <div class="fi-titles">
+                    <h3>${escapeHtml(instance.name)}</h3>
+                    <span class="status-badge ${statusClass(instance)}">${escapeHtml(statusName(instance))}</span>
+                </div>
             </div>
-            <div class="quota-line">
-                <span>${formatBytes(used)} / ${formatBytes(quota)}</span>
-                <b>${pct}%</b>
+            ${instance.description ? `<p class="fi-desc">${escapeHtml(instance.description)}</p>` : ''}
+            <div class="fi-quota">
+                <div class="fi-quota-top">
+                    <span>Использовано</span>
+                    <b>${pct}%</b>
+                </div>
+                <div class="progress"><span style="width:${pct}%"></span></div>
+                <div class="fi-quota-bottom">
+                    <span>${formatBytes(used)}</span>
+                    <span>из ${formatBytes(quota)}</span>
+                </div>
             </div>
-            <div class="progress"><span style="width:${pct}%"></span></div>
         `;
+    }
+
+    // Перечитывает инстансы из API и обновляет карточку выбранного (квота/used).
+    async function refreshInstanceInfo() {
+        try {
+            state.instances = await loadInstances();
+        } catch (_) {
+            return;
+        }
+        const instance = state.instances.find(item => item.id === state.selectedInstanceId);
+        if (instance && document.getElementById('file-instance-card')) {
+            renderFileInstanceCard(instance);
+        }
     }
 
     async function renderFiles(instance) {
@@ -303,10 +408,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const emptyMsg = search
                 ? `Ничего не найдено по запросу «${search}»`
                 : (section ? 'Папка пуста' : 'Файлы не найдены');
-            list.innerHTML = [
-                ...folders.map(folderRow),
-                ...items.map(fileRow),
-            ].join('') || emptyBlock(emptyMsg);
+
+            const parts = [];
+            if (folders.length) {
+                parts.push(`<div class="section-label"><i class="fas fa-folder"></i> Секции</div>`);
+                parts.push(`<div class="section-grid">${folders.map(folderChip).join('')}</div>`);
+            }
+            if (items.length) {
+                if (folders.length) parts.push(`<div class="section-label"><i class="fas fa-file"></i> Файлы</div>`);
+                parts.push(`<div class="file-rows">${items.map(fileRow).join('')}</div>`);
+            } else if (!folders.length) {
+                parts.push(emptyBlock(emptyMsg));
+            } else {
+                parts.push(emptyBlock(section ? 'Папка пуста' : 'В корне нет файлов'));
+            }
+            list.innerHTML = parts.join('');
         } catch (error) {
             list.innerHTML = emptyBlock('File API пока не отвечает для выбранного instance');
         }
@@ -327,15 +443,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function folderRow(folder) {
+    function folderChip(folder) {
         const name = typeof folder === 'string' ? folder : folder.name;
         return `
-            <div class="file-row folder is-clickable" data-search="${escapeAttr(name)}" onclick="openSection('${escapeAttr(name)}')">
+            <button type="button" class="section-chip" data-search="${searchKey(name)}" onclick="openSection('${escapeAttr(name)}')">
                 <i class="fas fa-folder"></i>
-                <span>${escapeHtml(name)}</span>
-                <small>Секция</small>
-                <span></span>
-            </div>
+                <span class="section-chip-name">${escapeHtml(name)}</span>
+            </button>
         `;
     }
 
@@ -367,20 +481,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = file.id || file.name || '';
         const name = file.name || id;
         const size = file.sizeBytes || file.size_bytes || file.size || 0;
+        const ext = String(file.extension || extOf(name) || '').toUpperCase();
+        const date = formatDate(file.updatedAt || file.updated_at || file.createdAt || file.created_at);
+        const meta = [ext, formatBytes(size), date].filter(Boolean).join(' · ');
+        const dedup = file.deduplicated
+            ? ' <span class="file-tag dedup" title="Дедуплицирован: контент уже хранился, место не занято повторно">dedup</span>'
+            : '';
         return `
-            <div class="file-row" data-search="${escapeAttr(name)}">
+            <div class="file-row" data-id="${escapeAttr(id)}" data-search="${searchKey(name)}">
                 <i class="fas ${fileIconClass(name)}"></i>
-                <span>${escapeHtml(name)}</span>
-                <small>${formatBytes(size)} · ${formatDate(file.updatedAt || file.updated_at || file.createdAt || file.created_at)}</small>
+                <span class="file-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+                <small title="${escapeAttr(file.mime || '')}">${escapeHtml(meta)}${dedup}</small>
                 <div class="row-actions">
-                    <button class="icon-btn glass-btn" title="Удалить" onclick="deleteFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                    <button class="icon-btn glass-btn" title="Скачать" onclick="downloadFile('${escapeAttr(id)}')">
-                        <i class="fas fa-download"></i>
-                    </button>
                     <button class="icon-btn glass-btn" title="Просмотр" onclick="previewFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
                         <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="icon-btn glass-btn" title="Скачать" onclick="downloadFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button class="icon-btn glass-btn" title="Удалить" onclick="deleteFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
+                        <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </div>
@@ -397,14 +517,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalUsed = sum(state.instances, item => bytes(item).used);
         const activeCount = state.instances.filter(item => statusName(item) === 'ACTIVE').length;
 
+        const count = state.instances.length;
+        const avgUsed = count ? totalUsed / count : 0;
+
         document.getElementById('analytics-stats').innerHTML = [
             statCard('info', 'fa-gauge-high', `${formatBytes(totalUsed)} занято`, `${percent(totalUsed, totalQuota)}%`, 'Общая квота'),
-            statCard('warning', 'fa-server', `${activeCount} active`, state.instances.length, 'Instance'),
-            statCard('success', 'fa-bolt', 'из API', formatBytes(totalQuota), 'Лимит'),
-            statCard('info', 'fa-file-lines', 'files API', 'N/A', 'Средний объект'),
+            statCard('warning', 'fa-server', `${activeCount} active`, count, 'Instance'),
+            statCard('success', 'fa-bolt', 'суммарно', formatBytes(totalQuota), 'Лимит'),
+            statCard('info', 'fa-scale-balanced', 'на instance', formatBytes(avgUsed), 'Средний объём'),
         ].join('');
 
         initAnalyticsCharts?.(chartState());
+
+        // Реальное распределение форматов для выбранного instance (раньше селект был мёртвый).
+        const refreshFormats = async () => {
+            if (!select.value) {
+                updateFormatChart?.({ 'нет данных': 1 });
+                return;
+            }
+            const dist = await loadFormatDistribution(select.value);
+            updateFormatChart?.(dist);
+        };
+        select.addEventListener('change', refreshFormats);
+        refreshFormats();
+    }
+
+    async function loadFormatDistribution(instanceId) {
+        const counts = {};
+        try {
+            const res = await safeApi(`/s4w/instances/${instanceId}/files?limit=200&page=1`);
+            listOf(res).forEach(file => {
+                const ext = String(file.extension || extOf(file.name) || 'other').toLowerCase();
+                counts[ext] = (counts[ext] || 0) + 1;
+            });
+        } catch (_) { /* график останется с заглушкой */ }
+        return Object.keys(counts).length ? counts : { 'нет файлов': 1 };
     }
 
     function chartState() {
@@ -413,12 +560,20 @@ document.addEventListener('DOMContentLoaded', () => {
             usedGb: bytesToGb(bytes(item).used),
             limitGb: bytesToGb(bytes(item).quota),
         }));
+        const totalUsed = sum(state.instances, item => bytes(item).used);
+        const totalQuota = sum(state.instances, item => bytes(item).quota);
+        const statusCounts = { ACTIVE: 0, PENDING: 0, INACTIVE: 0, CREATED: 0 };
+        state.instances.forEach(item => {
+            const name = statusName(item);
+            if (statusCounts[name] !== undefined) statusCounts[name] += 1;
+        });
         return {
             clients: storages,
             storages,
-            analytics: {
-                usedTb: bytesToGb(sum(state.instances, item => bytes(item).used)) / 1024,
-                formats: { unknown: 1 },
+            overview: {
+                usedGb: bytesToGb(totalUsed),
+                freeGb: Math.max(0, bytesToGb(totalQuota - totalUsed)),
+                statusCounts,
             },
         };
     }
@@ -432,13 +587,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <input name="name" class="glass-input" required maxlength="100">
                 </div>
                 <div class="form-group">
-                    <label>Описание</label>
-                    <input name="description" class="glass-input" required maxlength="200">
+                    <label>Описание <span class="optional-hint">— необязательно</span></label>
+                    <input name="description" class="glass-input" maxlength="200" placeholder="Опционально">
                 </div>
-                <div class="form-group">
-                    <label>Квота, MB</label>
-                    <input name="quotaMb" type="number" min="1" class="glass-input" required value="100">
-                </div>
+                ${quotaField(500, 'MB')}
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
                     <button class="btn btn-primary" type="submit">Создать</button>
@@ -449,16 +601,76 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('instance-form').addEventListener('submit', async event => {
             event.preventDefault();
             const data = new FormData(event.currentTarget);
-            await apiJson('/s4w/instances', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: data.get('name'),
-                    description: data.get('description'),
-                    quotaBytes: Number(data.get('quotaMb')) * 1024 * 1024,
-                }),
-            });
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            try {
+                await withBtnLoading(submitBtn, () => apiJson('/s4w/instances', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: data.get('name'),
+                        description: data.get('description'),
+                        quotaBytes: quotaToBytes(data.get('quota'), data.get('quotaUnit')),
+                    }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Ошибка создания', error.message || 'Не удалось создать хранилище');
+                }
+                return;
+            }
             closeModal();
             showAlert('success', 'Создано', String(data.get('name')));
+            state.instances = await loadInstances();
+            refreshCurrentPage();
+        });
+    }
+
+    function showInstanceEditModal(id) {
+        const instance = state.instances.find(item => item.id === id);
+        if (!instance) {
+            showAlert('warning', 'Не найдено', 'Хранилище не найдено');
+            return;
+        }
+        const quota = splitQuota(bytes(instance).quota);
+        openModal(`
+            <h3>Редактировать хранилище</h3>
+            <form id="instance-edit-form" class="admin-form">
+                <div class="form-group">
+                    <label>Название</label>
+                    <input name="name" class="glass-input" required maxlength="100" value="${escapeAttr(instance.name)}">
+                </div>
+                <div class="form-group">
+                    <label>Описание <span class="optional-hint">— необязательно</span></label>
+                    <input name="description" class="glass-input" maxlength="200" placeholder="Опционально" value="${escapeAttr(instance.description || '')}">
+                </div>
+                ${quotaField(quota.value, quota.unit)}
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                    <button class="btn btn-primary" type="submit">Сохранить</button>
+                </div>
+            </form>
+        `);
+
+        document.getElementById('instance-edit-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            try {
+                await withBtnLoading(submitBtn, () => apiJson(`/s4w/instances/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        name: data.get('name'),
+                        description: data.get('description'),
+                        quotaBytes: quotaToBytes(data.get('quota'), data.get('quotaUnit')),
+                    }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Ошибка сохранения', error.message || 'Не удалось сохранить хранилище');
+                }
+                return;
+            }
+            closeModal();
+            showAlert('success', 'Сохранено', String(data.get('name')));
             state.instances = await loadInstances();
             refreshCurrentPage();
         });
@@ -472,8 +684,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div id="token-list" class="token-list">${emptyBlock('Загрузка токенов...')}</div>
             <form id="token-form" class="admin-form">
                 <div class="form-group">
-                    <label>Название токена</label>
-                    <input name="name" class="glass-input" required maxlength="70">
+                    <label>Новый токен</label>
+                    <input name="name" class="glass-input" required maxlength="70" placeholder="Название токена">
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
@@ -485,27 +697,37 @@ document.addEventListener('DOMContentLoaded', () => {
         await renderTokens(instanceId);
         document.getElementById('token-form').addEventListener('submit', async event => {
             event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            const created = await apiJson(`/s4w/instances/${instanceId}/tokens`, {
-                method: 'POST',
-                body: JSON.stringify({ name: data.get('name') }),
-            });
-            renderCreatedToken(created.token || '');
-            event.currentTarget.reset();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            const submitBtn = form.querySelector('button[type="submit"]');
+            let created;
+            try {
+                created = await withBtnLoading(submitBtn, () => apiJson(`/s4w/instances/${instanceId}/tokens`, {
+                    method: 'POST',
+                    body: JSON.stringify({ name: data.get('name') }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Ошибка', error.message || 'Не удалось создать токен');
+                }
+                return;
+            }
+            renderCreatedToken(created?.token || '', data.get('name'));
+            form.reset();
             showAlert('success', 'Токен создан', 'Скопируйте его сейчас');
             await renderTokens(instanceId);
         });
     }
 
-    function renderCreatedToken(token) {
+    function renderCreatedToken(token, name) {
         const box = document.getElementById('created-token-box');
         if (!box || !token) return;
 
         box.innerHTML = `
             <div class="created-token glass">
                 <div>
-                    <strong>Новый токен</strong>
-                    <p>Он показан только один раз. Скопируйте его сейчас.</p>
+                    <strong>Токен "${escapeHtml(name || '')}"</strong>
+                    <p>Показан только один раз. Скопируйте его сейчас.</p>
                 </div>
                 <code>${escapeHtml(token)}</code>
                 <button class="btn btn-secondary" id="copy-created-token" type="button">
@@ -528,20 +750,71 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = document.getElementById('token-list');
         const data = await apiJson(`/s4w/instances/${instanceId}/tokens?limit=50&page=1`);
         const tokens = listOf(data);
-        target.innerHTML = tokens.map(token => `
-            <div class="file-row" data-search="${escapeAttr(token.name)}">
-                <i class="fas fa-key"></i>
+        target.innerHTML = tokens.map(token => {
+            const active = token.status?.id === 1;
+            return `
+            <div class="file-row" data-search="${searchKey(token.name)}">
+                <i class="fas fa-key ${active ? 'token-on' : 'token-off'}"></i>
                 <span>${escapeHtml(token.name)}</span>
-                <small>${escapeHtml(token.status?.name || '')} · ${formatDate(token.createdAt)}</small>
-                <button class="btn btn-secondary download-btn" onclick="changeTokenStatus('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', ${token.status?.id === 1 ? 0 : 1})">
-                    ${token.status?.id === 1 ? 'Выключить' : 'Включить'}
-                </button>
+                <small><span class="token-status ${active ? 'on' : 'off'}">${escapeHtml(token.status?.name || '')}</span> · ${formatDate(token.createdAt)}</small>
+                <div class="row-actions">
+                    <button class="icon-btn glass-btn token-toggle ${active ? 'is-active' : ''}" title="${active ? 'Выключить токен' : 'Включить токен'}" onclick="changeTokenStatus('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', ${active ? 0 : 1})">
+                        <i class="fas ${active ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
+                    </button>
+                    <button class="icon-btn glass-btn" title="Перевыпустить токен" onclick="regenerateToken('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', '${escapeAttr(token.name)}')">
+                        <i class="fas fa-rotate"></i>
+                    </button>
+                    <button class="icon-btn glass-btn token-delete" title="Удалить токен" onclick="deleteToken('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', '${escapeAttr(token.name)}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
-        `).join('') || emptyBlock('Токены не найдены');
+        `;
+        }).join('') || emptyBlock('Токены не найдены');
     }
 
     window.changeTokenStatus = async (instanceId, tokenId, status) => {
-        await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}/${status}`, { method: 'PATCH', body: '{}' });
+        try {
+            await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}/${status}`, { method: 'PATCH', body: '{}' });
+        } catch (error) {
+            if (error.message !== 'unauthorized') {
+                showAlert('danger', 'Ошибка', error.message || 'Не удалось изменить статус токена');
+            }
+            return;
+        }
+        await renderTokens(instanceId);
+    };
+
+    // Перевыпуск: старый токен сразу инвалидируется, новый показываем один раз.
+    window.regenerateToken = async (instanceId, tokenId, name) => {
+        if (!window.confirm('Перевыпустить токен? Старый токен перестанет работать немедленно.')) return;
+        let created;
+        try {
+            created = await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}`, { method: 'PATCH', body: '{}' });
+        } catch (error) {
+            if (error.message !== 'unauthorized') {
+                showAlert('danger', 'Ошибка', error.message || 'Не удалось перевыпустить токен');
+            }
+            return;
+        }
+        renderCreatedToken(created?.token || '', name);
+        showAlert('success', 'Токен перевыпущен', 'Скопируйте новый токен сейчас');
+        await renderTokens(instanceId);
+    };
+
+    window.deleteToken = async (instanceId, tokenId, name) => {
+        if (!window.confirm(`Удалить токен «${name}»? Действие необратимо.`)) return;
+        try {
+            await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}`, { method: 'DELETE' });
+        } catch (error) {
+            if (error.message !== 'unauthorized') {
+                showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить токен');
+            }
+            return;
+        }
+        const box = document.getElementById('created-token-box');
+        if (box) box.innerHTML = '';
+        showAlert('success', 'Токен удалён', name);
         await renderTokens(instanceId);
     };
 
@@ -555,16 +828,18 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `);
 
-        document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+        document.getElementById('confirm-delete-btn').addEventListener('click', async event => {
             try {
-                await apiJson(`/s4w/instances/${id}`, { method: 'DELETE' });
+                await withBtnLoading(event.currentTarget, () => apiJson(`/s4w/instances/${id}`, { method: 'DELETE' }));
                 closeModal();
                 showAlert('success', 'Хранилище удаляется', 'Страница будет обновлена');
                 window.setTimeout(() => {
                     window.location.reload();
                 }, 1400);
             } catch (error) {
-                showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить хранилище');
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить хранилище');
+                }
             }
         });
     };
@@ -587,29 +862,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     </button>
                 </div>
                 <div class="form-divider"><span>Опциональные параметры</span></div>
-                <div class="form-group">
-                    <label>Имя</label>
-                    <input name="name" class="glass-input" placeholder="Оставьте пустым, чтобы использовать имя файла">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Секция (папка)</label>
+                        <input name="section" class="glass-input" list="upload-section-options"
+                            pattern="^[A-Za-z0-9][A-Za-z0-9_\-]{0,99}$"
+                            placeholder="Латиница, цифры, _ и -">
+                        <datalist id="upload-section-options"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>Имя</label>
+                        <input name="name" class="glass-input" placeholder="Как у файла, если пусто">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Секция (папка)</label>
-                    <input name="section" class="glass-input" list="upload-section-options"
-                        pattern="^[A-Za-z0-9][A-Za-z0-9_\-]{0,99}$"
-                        placeholder="Опционально. Латиница, цифры, _ и -">
-                    <datalist id="upload-section-options"></datalist>
+                <div id="upload-image-options" hidden>
+                    <div class="form-group">
+                        <label class="range-label">
+                            <span>Сжатие изображения</span>
+                            <span id="upload-compress-value" class="range-value">Без сжатия</span>
+                        </label>
+                        <input id="upload-compress-input" name="compress" type="range" min="0" max="100" step="1" value="0" class="range-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input id="upload-webp-input" name="webp" type="checkbox" value="1">
+                            <span>Конвертировать в WebP</span>
+                        </label>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="range-label">
-                        <span>Сжатие изображения</span>
-                        <span id="upload-compress-value" class="range-value">Без сжатия</span>
-                    </label>
-                    <input id="upload-compress-input" name="compress" type="range" min="0" max="100" step="1" value="0" class="range-input">
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input name="webp" type="checkbox" value="1">
-                        <span>Конвертировать в WebP</span>
-                    </label>
+                <div id="upload-progress" class="upload-progress" hidden>
+                    <div class="upload-progress-track"><span id="upload-progress-bar"></span></div>
+                    <small id="upload-progress-text">0%</small>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
@@ -629,10 +912,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map(s => `<option value="${escapeAttr(typeof s === 'string' ? s : s.name)}"></option>`)
                 .join('');
         }).catch(() => {});
+        const imageOptions = document.getElementById('upload-image-options');
+        const webpInput = document.getElementById('upload-webp-input');
         document.getElementById('upload-file-trigger').addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', () => {
             const f = fileInput.files[0];
             fileLabel.textContent = f ? `${f.name} · ${formatBytes(f.size)}` : 'Выбрать файл';
+            // Сжатие/WebP поддерживаются только для изображений — показываем опции
+            // лишь для них. Иначе скрываем и сбрасываем, чтобы не уходили в запрос.
+            const isImage = !!f && (f.type.startsWith('image/') || isImageExt(extOf(f.name)));
+            imageOptions.hidden = !isImage;
+            if (!isImage) {
+                compressInput.value = 0;
+                webpInput.checked = false;
+                renderCompress();
+            }
         });
         const renderCompress = () => {
             const v = Number(compressInput.value);
@@ -656,10 +950,37 @@ document.addEventListener('DOMContentLoaded', () => {
             body.set('file', file);
             if (compress > 0) body.set('compress', String(compress));
             if (webp) body.set('webp', '1');
-            await apiJson(`/s4w/instances/${state.selectedInstanceId}/files`, { method: 'POST', body });
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const progressWrap = document.getElementById('upload-progress');
+            const progressBar = document.getElementById('upload-progress-bar');
+            const progressText = document.getElementById('upload-progress-text');
+            submitBtn.disabled = true;
+            submitBtn.classList.add('is-loading');
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            if (progressWrap) progressWrap.hidden = false;
+
+            try {
+                await uploadWithProgress(`/s4w/instances/${state.selectedInstanceId}/files`, body, pct => {
+                    if (progressBar) progressBar.style.width = `${pct}%`;
+                    if (progressText) progressText.textContent = pct < 100 ? `${pct}%` : 'Обработка на сервере...';
+                });
+            } catch (error) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('is-loading');
+                submitBtn.innerHTML = 'Загрузить';
+                if (progressWrap) progressWrap.hidden = true;
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Ошибка загрузки', error.message || 'Не удалось загрузить файл');
+                }
+                return;
+            }
             closeModal();
             showAlert('success', 'Файл загружен', name || (file && file.name) || 'OK');
-            await renderFiles(state.instances.find(item => item.id === state.selectedInstanceId));
+            // Обновляем инфо об instance (квота) и список файлов.
+            await refreshInstanceInfo();
+            const inst = state.instances.find(item => item.id === state.selectedInstanceId);
+            if (inst) await renderFiles(inst);
         });
     }
 
@@ -709,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
-                <button class="btn btn-primary" onclick="downloadFile('${escapeAttr(id)}')">
+                <button class="btn btn-primary" onclick="downloadFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
                     <i class="fas fa-download"></i>Скачать
                 </button>
             </div>
@@ -787,14 +1108,19 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `);
 
-        document.getElementById('confirm-file-delete-btn').addEventListener('click', async () => {
+        document.getElementById('confirm-file-delete-btn').addEventListener('click', async event => {
             try {
-                await apiJson(`/s4w/instances/${state.selectedInstanceId}/files/${id}`, { method: 'DELETE' });
+                await withBtnLoading(event.currentTarget, () => apiJson(`/s4w/instances/${state.selectedInstanceId}/files/${id}`, { method: 'DELETE' }));
                 closeModal();
                 showAlert('success', 'Файл удалён', name);
-                await renderFiles(state.instances.find(item => item.id === state.selectedInstanceId));
+                // Просто убираем строку из списка (без полной перерисовки)...
+                document.querySelector(`#file-list .file-row[data-id="${id}"]`)?.remove();
+                // ...а инфо об instance (квоту) обновляем через 1 сек.
+                setTimeout(refreshInstanceInfo, 1000);
             } catch (error) {
-                showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить файл');
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить файл');
+                }
             }
         });
     }
@@ -867,6 +1193,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return ids.some(id => document.getElementById(id));
     }
 
+    // Поле квоты: число + единица [MB, GB]. Общая разметка для create/edit.
+    function quotaField(value, unit) {
+        return `
+            <div class="form-group">
+                <label>Квота</label>
+                <div class="input-with-unit">
+                    <input name="quota" type="number" min="1" step="1" class="glass-input" required value="${escapeAttr(String(value))}">
+                    <select name="quotaUnit" class="glass-input unit-select">
+                        <option value="MB" ${unit === 'MB' ? 'selected' : ''}>MB</option>
+                        <option value="GB" ${unit === 'GB' ? 'selected' : ''}>GB</option>
+                    </select>
+                </div>
+            </div>
+        `;
+    }
+
+    function quotaToBytes(value, unit) {
+        const mult = unit === 'GB' ? 1024 ** 3 : 1024 ** 2;
+        return Math.round(Number(value || 0) * mult);
+    }
+
+    // Разбивает байты на {value, unit} для префилла: GB, если кратно гигабайту, иначе MB.
+    function splitQuota(bytesValue) {
+        const total = Number(bytesValue || 0);
+        const gb = 1024 ** 3;
+        if (total >= gb && total % gb === 0) {
+            return { value: total / gb, unit: 'GB' };
+        }
+        return { value: Math.max(1, Math.round(total / (1024 ** 2))), unit: 'MB' };
+    }
+
     function bytes(instance) {
         return {
             quota: Number(instance?.bytes?.quota || instance?.quotaBytes || 0),
@@ -927,7 +1284,104 @@ document.addEventListener('DOMContentLoaded', () => {
             .replaceAll("'", '&#039;');
     }
 
+    // Экранирование для значения в атрибуте/inline-onclick. Регистр СОХРАНЯЕМ —
+    // иначе ломаются секции с заглавными (openSection) и искажаются имена.
     function escapeAttr(value) {
+        return escapeHtml(String(value ?? ''));
+    }
+
+    // Ключ для data-search: регистронезависимый поиск сверяется с lowercase.
+    function searchKey(value) {
         return escapeHtml(String(value ?? '').toLowerCase());
+    }
+
+    function spinnerBlock(message = 'Загрузка...') {
+        return `<div class="loading-state"><i class="fas fa-spinner fa-spin"></i><span>${escapeHtml(message)}</span></div>`;
+    }
+
+    function spinnerRow(cols, message = 'Загрузка...') {
+        return `<tr><td colspan="${cols}" class="empty-cell"><span class="loading-inline"><i class="fas fa-spinner fa-spin"></i> ${escapeHtml(message)}</span></td></tr>`;
+    }
+
+    // Блокирует кнопку и показывает спиннер на время async-операции (анти-двойной-клик + фидбек).
+    async function withBtnLoading(button, fn) {
+        if (!button) return fn();
+        const original = button.innerHTML;
+        button.disabled = true;
+        button.classList.add('is-loading');
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        try {
+            return await fn();
+        } finally {
+            button.disabled = false;
+            button.classList.remove('is-loading');
+            button.innerHTML = original;
+        }
+    }
+
+    // Скачивание через fetch с Bearer-токеном (media-эндпоинт требует авторизацию,
+    // поэтому window.open сюда не годится — он не шлёт заголовок).
+    async function downloadFileBlob(id, name) {
+        if (!state.selectedInstanceId) {
+            showAlert('warning', 'Instance не выбран', 'Выберите instance для скачивания');
+            return;
+        }
+        try {
+            const response = await fetch(apiPath(`/s4w/instances/${state.selectedInstanceId}/media/${id}`), {
+                headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` },
+            });
+            if (response.status === 401 || response.status === 403) {
+                localStorage.removeItem(tokenKey);
+                window.location.href = '/web/auth';
+                return;
+            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name || id;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) {
+            showAlert('danger', 'Ошибка скачивания', error.message || 'Не удалось скачать файл');
+        }
+    }
+
+    // Загрузка файла через XHR — даёт реальный прогресс (fetch его не отдаёт).
+    function uploadWithProgress(path, formData, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', apiPath(path));
+            xhr.setRequestHeader('Accept', 'application/json');
+            xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem(tokenKey) || ''}`);
+            xhr.upload.addEventListener('progress', event => {
+                if (event.lengthComputable && onProgress) {
+                    onProgress(Math.round((event.loaded / event.total) * 100));
+                }
+            });
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 401 || xhr.status === 403) {
+                    localStorage.removeItem(tokenKey);
+                    window.location.href = '/web/auth';
+                    reject(new Error('unauthorized'));
+                    return;
+                }
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(xhr.responseText ? JSON.parse(xhr.responseText) : null);
+                    return;
+                }
+                let message = `HTTP ${xhr.status}`;
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    message = data.message || data.error || message;
+                } catch (_) { /* keep default */ }
+                reject(new Error(message));
+            });
+            xhr.addEventListener('error', () => reject(new Error('Сетевая ошибка при загрузке')));
+            xhr.send(formData);
+        });
     }
 });

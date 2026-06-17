@@ -1,7 +1,6 @@
 <div class="page-header">
     <div>
         <h1>Хранилища</h1>
-        <p>Данные загружаются через административный API.</p>
     </div>
     <div class="page-actions">
         <button class="btn btn-primary" onclick="showStorageModal()"><i class="fas fa-plus"></i>Создать хранилище</button>
@@ -16,10 +15,10 @@
                 <th>Название</th>
                 <th>Описание</th>
                 <th>Квота</th>
-                <th>Статус</th>
+                <th class="col-center">Статус</th>
                 <th>Дата создания</th>
                 <th>Дата изменения</th>
-                <th>Действия</th>
+                <th class="col-right">Действия</th>
             </tr>
             </thead>
             <tbody id="storage-rows">

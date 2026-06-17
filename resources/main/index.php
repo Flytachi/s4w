@@ -12,11 +12,11 @@
 
 <section class="dashboard-layout">
     <div class="panel glass">
-        <div class="panel-title"><h3>Рост занятого объема</h3><span>последние 6 месяцев</span></div>
+        <div class="panel-title"><h3>Использование квоты</h3><span>занято / свободно, GB</span></div>
         <div class="chart-box"><canvas id="usageChart"></canvas></div>
     </div>
     <div class="panel glass">
-        <div class="panel-title"><h3>Операции API</h3><span>GET / PUT / LIST / DELETE</span></div>
+        <div class="panel-title"><h3>Хранилища по статусам</h3><span>ACTIVE / PENDING / INACTIVE / CREATED</span></div>
         <div class="chart-box"><canvas id="trafficChart"></canvas></div>
     </div>
 </section>
@@ -33,10 +33,10 @@
                 <th>Название</th>
                 <th>Описание</th>
                 <th>Квота</th>
-                <th>Статус</th>
+                <th class="col-center">Статус</th>
                 <th>Дата создания</th>
                 <th>Дата изменения</th>
-                <th>Действия</th>
+                <th class="col-right">Действия</th>
             </tr>
             </thead>
             <tbody id="overview-instance-rows">

@@ -1,7 +1,6 @@
 <div class="page-header">
     <div>
-        <h1>Файловый браузер</h1>
-        <p>Выберите instance для просмотра файлов и секций.</p>
+        <h1>Файлы</h1>
     </div>
     <div class="page-actions">
         <select id="file-instance-select" class="glass-input compact-select"></select>

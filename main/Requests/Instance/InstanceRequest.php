@@ -13,8 +13,8 @@ class InstanceRequest
         #[NotBlank, Max(100)]
         public string $name,
 
-        #[NotBlank, Max(200)]
-        public string $description,
+        #[Max(200)]
+        public string $description = '',
 
         #[Digits(12, 0), Positive]
         public int $quotaBytes = 104857600 // 100MB

@@ -40,34 +40,34 @@ function chartOptions(extra = {}) {
 function initOverviewCharts(state) {
     clearCharts();
 
+    // Реальное: занято против свободного по всем хранилищам (был фейковый «рост за 6 мес»).
     makeChart('usageChart', {
-        type: 'line',
+        type: 'doughnut',
         data: {
-            labels: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн'],
+            labels: ['Занято, GB', 'Свободно, GB'],
             datasets: [{
-                label: 'Занято, TB',
-                data: [4.8, 5.1, 5.9, 6.7, 7.4, state.analytics.usedTb],
-                borderColor: '#38bdf8',
-                backgroundColor: 'rgba(56, 189, 248, 0.14)',
-                fill: true,
-                tension: 0.35
+                data: [state.overview.usedGb, state.overview.freeGb],
+                backgroundColor: ['#38bdf8', 'rgba(148, 163, 184, 0.28)'],
+                borderWidth: 0
             }]
         },
-        options: chartOptions()
+        options: chartOptions({ scales: {} })
     });
 
+    // Реальное: хранилища по статусам (были выдуманные счётчики запросов GET/PUT/...).
+    const sc = state.overview.statusCounts;
     makeChart('trafficChart', {
         type: 'bar',
         data: {
-            labels: ['GET', 'PUT', 'DELETE', 'LIST'],
+            labels: ['ACTIVE', 'PENDING', 'INACTIVE', 'CREATED'],
             datasets: [{
-                label: 'Запросы за 24ч',
-                data: [18420, 5320, 640, 4110],
-                backgroundColor: ['#22c55e', '#38bdf8', '#ef4444', '#f59e0b'],
+                label: 'Кол-во хранилищ',
+                data: [sc.ACTIVE, sc.PENDING, sc.INACTIVE, sc.CREATED],
+                backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#38bdf8'],
                 borderRadius: 8
             }]
         },
-        options: chartOptions()
+        options: chartOptions({ scales: { y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.12)' }, ticks: { color: '#9aa4b2', precision: 0 } } } })
     });
 }
 
@@ -106,13 +106,26 @@ function initAnalyticsCharts(state) {
         options: chartOptions()
     });
 
-    makeChart('formatChart', {
+    // formatChart строится отдельно (updateFormatChart) — зависит от выбранного instance.
+}
+
+let formatChartInstance = null;
+
+// Реальное распределение форматов выбранного instance. Раньше сюда уходил {unknown:1}.
+function updateFormatChart(formats) {
+    const node = document.getElementById('formatChart');
+    if (!node || typeof Chart === 'undefined') return;
+    if (formatChartInstance) {
+        formatChartInstance.destroy();
+        formatChartInstance = null;
+    }
+    formatChartInstance = new Chart(node, {
         type: 'polarArea',
         data: {
-            labels: Object.keys(state.analytics.formats),
+            labels: Object.keys(formats),
             datasets: [{
-                data: Object.values(state.analytics.formats),
-                backgroundColor: ['#38bdf8', '#22c55e', '#f59e0b', '#ef4444', '#a78bfa', '#14b8a6']
+                data: Object.values(formats),
+                backgroundColor: ['#38bdf8', '#22c55e', '#f59e0b', '#ef4444', '#a78bfa', '#14b8a6', '#f472b6', '#34d399']
             }]
         },
         options: chartOptions({ scales: { r: { ticks: { display: false }, grid: { color: 'rgba(148, 163, 184, 0.16)' } } } })

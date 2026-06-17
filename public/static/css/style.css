@@ -1083,7 +1083,7 @@ button.file-row {
 }
 
 .modal-content {
-    width: min(620px, 100%);
+    width: min(760px, 100%);
     max-height: calc(100vh - 40px);
     overflow-y: auto;
     padding: 22px;
@@ -1322,7 +1322,422 @@ button.file-row {
     }
 
     .file-row small,
-    .file-row .download-btn {
+    .file-row .download-btn,
+    .file-row .row-actions,
+    .file-main-cell {
         grid-column: 2;
     }
+}
+
+/* ── Loaders / async states ─────────────────────────────────────────── */
+.loading-state {
+    width: 100%;
+    min-height: 74px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.028);
+}
+
+.loading-state i,
+.loading-inline i {
+    color: var(--primary);
+}
+
+.btn.is-loading,
+.glass-btn.is-loading {
+    opacity: 0.75;
+    cursor: progress;
+    pointer-events: none;
+}
+
+.btn:disabled,
+.glass-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ── Upload progress ────────────────────────────────────────────────── */
+.upload-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0 2px;
+}
+
+.upload-progress-track {
+    flex: 1;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.22);
+}
+
+#upload-progress-bar {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--primary-strong);
+    transition: width 0.18s ease;
+}
+
+.upload-progress small {
+    min-width: 48px;
+    text-align: right;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── File row meta ──────────────────────────────────────────────────── */
+.file-main-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.file-main-cell .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-tags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.file-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    background: rgba(148, 163, 184, 0.16);
+    border: 1px solid var(--border);
+}
+
+.file-tag.dedup {
+    color: var(--green);
+    background: rgba(34, 197, 94, 0.13);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* ── Table column alignment ─────────────────────────────────────────── */
+.glass-table th.col-center,
+.glass-table td.col-center {
+    text-align: center;
+}
+
+.glass-table th.col-right,
+.glass-table td.col-right {
+    text-align: right;
+}
+
+.col-right .row-actions {
+    justify-content: flex-end;
+}
+
+/* ── Row settings dropdown ──────────────────────────────────────────── */
+.dropdown {
+    position: relative;
+    display: inline-flex;
+}
+
+.dropdown-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 188px;
+    display: none;
+    flex-direction: column;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #11161d;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.dropdown-menu.open {
+    display: flex;
+}
+
+.dropdown-menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.dropdown-menu button i {
+    width: 16px;
+    color: var(--muted);
+}
+
+.dropdown-menu button:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.dropdown-menu button.danger,
+.dropdown-menu button.danger i {
+    color: var(--red);
+}
+
+/* ── Input with unit selector (quota) ───────────────────────────────── */
+.input-with-unit {
+    display: flex;
+    gap: 8px;
+}
+
+.input-with-unit .glass-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.input-with-unit .unit-select {
+    flex: 0 0 88px;
+    width: 88px;
+}
+
+.optional-hint {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 0.8em;
+}
+
+/* ── Token list status / toggle ─────────────────────────────────────── */
+.file-row i.token-on {
+    color: var(--green);
+}
+
+.file-row i.token-off {
+    color: var(--red);
+}
+
+.token-status {
+    font-weight: 700;
+}
+
+.token-status.on {
+    color: var(--green);
+}
+
+.token-status.off {
+    color: var(--red);
+}
+
+.token-toggle i {
+    font-size: 1.25rem;
+}
+
+.token-toggle.is-active i {
+    color: var(--green);
+}
+
+.token-toggle:not(.is-active) i {
+    color: var(--red);
+}
+
+.token-delete i {
+    color: var(--red);
+}
+
+/* ── Files page: storage card + pick prompt ─────────────────────────── */
+.fi-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.fi-avatar {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius);
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--primary);
+    font-weight: 800;
+    font-size: 1.05rem;
+}
+
+.fi-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.fi-titles h3 {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fi-titles .status-badge {
+    align-self: flex-start;
+}
+
+.fi-desc {
+    margin: 0 0 16px;
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.fi-quota {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.fi-quota-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.fi-quota-top b {
+    color: var(--text);
+    font-size: 1.05rem;
+}
+
+.fi-quota .progress {
+    margin-bottom: 8px;
+}
+
+.fi-quota-bottom {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.fi-quota-bottom span:last-child {
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.file-empty-pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 28px 18px;
+    text-align: center;
+    color: var(--muted);
+}
+
+.file-empty-pick i {
+    font-size: 1.8rem;
+    color: var(--primary);
+}
+
+/* ── Files panel: sections grid + compact file rows ─────────────────── */
+.section-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 2px 0 -2px;
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+}
+
+.section-chip {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(245, 158, 11, 0.06);
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    transition: 0.16s ease;
+}
+
+.section-chip:hover {
+    background: rgba(245, 158, 11, 0.12);
+    transform: translateY(-1px);
+}
+
+.section-chip i {
+    color: var(--yellow);
+    font-size: 1.05rem;
+}
+
+.section-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.file-rows {
+    display: grid;
+    gap: 6px;
+}
+
+/* Компактные строки файлов — меньше высоты и отступов. */
+.file-rows .file-row {
+    min-height: 44px;
+    padding: 6px 10px;
+}
+
+.file-rows .file-row .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.file-rows .file-row small {
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.file-rows .row-actions {
+    gap: 6px;
+}
+
+.file-rows .row-actions .icon-btn {
+    width: 32px;
+    height: 32px;
 }
