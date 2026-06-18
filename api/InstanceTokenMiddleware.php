@@ -2,6 +2,7 @@
 
 namespace Api;
 
+use Flytachi\Winter\Base\HttpCode;
 use Flytachi\Winter\Cdo\Qb;
 use Flytachi\Winter\DI\Attribute\Autowired;
 use Flytachi\Winter\K2\Http\Contracts\HttpRequest;
@@ -29,7 +30,7 @@ class InstanceTokenMiddleware extends Middleware
     {
         $token = Header::getBearerToken();
         if (!$token) {
-            MiddlewareException::throw('Token required');
+            MiddlewareException::throw('Token required', HttpCode::UNAUTHORIZED);
         }
 
         $hash = TokenGenerator::hash($token);
@@ -42,10 +43,11 @@ class InstanceTokenMiddleware extends Middleware
 
         $model = $this->repo->where(Qb::eq('hash', $hash))->find();
         if (!$model) {
-            MiddlewareException::throw('Invalid token');
+            MiddlewareException::throw('Invalid token', HttpCode::UNAUTHORIZED);
         }
         if ($model->status !== TokenStatus::ACTIVE->value) {
-            MiddlewareException::throw('Token is inactive');
+            // Токен существует, но выключен — это 403 (re-auth не поможет), а не 401.
+            MiddlewareException::throw('Token is inactive', HttpCode::FORBIDDEN);
         }
 
         $this->cache->putToken($hash, $model->instance_id);

@@ -44,7 +44,7 @@ function initOverviewCharts(state) {
     makeChart('usageChart', {
         type: 'doughnut',
         data: {
-            labels: ['Занято, GB', 'Свободно, GB'],
+            labels: ['Used, GB', 'Free, GB'],
             datasets: [{
                 data: [state.overview.usedGb, state.overview.freeGb],
                 backgroundColor: ['#38bdf8', 'rgba(148, 163, 184, 0.28)'],
@@ -61,7 +61,7 @@ function initOverviewCharts(state) {
         data: {
             labels: ['ACTIVE', 'PENDING', 'INACTIVE', 'CREATED'],
             datasets: [{
-                label: 'Кол-во хранилищ',
+                label: 'Storages',
                 data: [sc.ACTIVE, sc.PENDING, sc.INACTIVE, sc.CREATED],
                 backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#38bdf8'],
                 borderRadius: 8
@@ -92,12 +92,12 @@ function initAnalyticsCharts(state) {
         data: {
             labels: state.storages.map(storage => storage.name),
             datasets: [{
-                label: 'Использовано, GB',
+                label: 'Used, GB',
                 data: state.storages.map(storage => storage.usedGb),
                 backgroundColor: '#38bdf8',
                 borderRadius: 8
             }, {
-                label: 'Лимит, GB',
+                label: 'Limit, GB',
                 data: state.storages.map(storage => storage.limitGb),
                 backgroundColor: 'rgba(148, 163, 184, 0.28)',
                 borderRadius: 8

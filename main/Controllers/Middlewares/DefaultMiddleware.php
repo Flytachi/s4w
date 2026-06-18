@@ -2,6 +2,7 @@
 
 namespace Main\Controllers\Middlewares;
 
+use Flytachi\Winter\Base\HttpCode;
 use Flytachi\Winter\K2\Http\Contracts\HttpRequest;
 use Flytachi\Winter\K2\Http\Contracts\HttpResponse;
 use Flytachi\Winter\K2\Http\Header;
@@ -14,7 +15,7 @@ class DefaultMiddleware extends Middleware
     public function before(HttpRequest $request, HttpResponse $response): void
     {
         if (Header::getBearerToken() !== env('TOKEN', '')) {
-            MiddlewareException::throw('Invalid token provided');
+            MiddlewareException::throw('Invalid token provided', HttpCode::UNAUTHORIZED);
         }
     }
 }

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FileStore Login</title>
+    <title>S4W Login</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -19,33 +19,33 @@
         <div class="auth-brand">
             <div class="logo">
                 <i class="fas fa-database"></i>
-                <span>FileStore</span>
+                <span>S4W</span>
             </div>
-            <p>Management-Panel</p>
+            <p>Management Panel</p>
         </div>
 
         <div class="auth-title">
-            <h1>Вход в панель</h1>
-            <p>Используйте учетные данные администратора.</p>
+            <h1>Sign in</h1>
+            <p>Use administrator credentials.</p>
         </div>
 
         <div class="auth-error" data-auth-error hidden>
             <i class="fas fa-circle-exclamation"></i>
-            <span>Неверный логин или пароль</span>
+            <span>Invalid login or password</span>
         </div>
 
         <form class="admin-form" data-auth-form>
             <div class="form-group">
-                <label for="username">Логин</label>
+                <label for="username">Login</label>
                 <input id="username" name="username" class="glass-input" autocomplete="username" required autofocus>
             </div>
             <div class="form-group">
-                <label for="password">Пароль</label>
+                <label for="password">Password</label>
                 <input id="password" name="password" type="password" class="glass-input" autocomplete="current-password" required>
             </div>
             <button class="btn btn-primary auth-submit" type="submit">
                 <i class="fas fa-right-to-bracket"></i>
-                Войти
+                Sign in
             </button>
         </form>
     </section>
@@ -72,8 +72,15 @@
             }),
         })
             .then(async response => {
+                if (response.status === 429) {
+                    const retry = Number(response.headers.get('Retry-After'));
+                    const mins = retry ? Math.ceil(retry / 60) : null;
+                    throw new Error(mins
+                        ? `Too many attempts. Try again in ~${mins} min.`
+                        : 'Too many attempts. Try again later.');
+                }
                 if (!response.ok) {
-                    throw new Error('auth');
+                    throw new Error('Invalid login or password');
                 }
                 return response.json();
             })
@@ -81,11 +88,13 @@
                 localStorage.setItem('s4w_jwt', data.token || '');
                 document.body.classList.add('page-leaving');
                 window.setTimeout(() => {
-                    window.location.href = '/web/main';
+                    window.location.href = '/web';
                 }, 220);
             })
-            .catch(() => {
-                document.querySelector('[data-auth-error]').hidden = false;
+            .catch(error => {
+                const box = document.querySelector('[data-auth-error]');
+                box.querySelector('span').textContent = error.message || 'Invalid login or password';
+                box.hidden = false;
                 form.dataset.submitting = 'false';
             });
     });

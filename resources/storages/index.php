@@ -1,9 +1,9 @@
 <div class="page-header">
     <div>
-        <h1>Хранилища</h1>
+        <h1>Storages</h1>
     </div>
     <div class="page-actions">
-        <button class="btn btn-primary" onclick="showStorageModal()"><i class="fas fa-plus"></i>Создать хранилище</button>
+        <button class="btn btn-primary" onclick="showStorageModal()"><i class="fas fa-plus"></i>New storage</button>
     </div>
 </div>
 
@@ -12,17 +12,17 @@
         <table class="glass-table">
             <thead>
             <tr>
-                <th>Название</th>
-                <th>Описание</th>
-                <th>Квота</th>
-                <th class="col-center">Статус</th>
-                <th>Дата создания</th>
-                <th>Дата изменения</th>
-                <th class="col-right">Действия</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Quota</th>
+                <th class="col-center">Status</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th class="col-right">Actions</th>
             </tr>
             </thead>
             <tbody id="storage-rows">
-            <tr><td colspan="7" class="empty-cell">Загрузка через API...</td></tr>
+            <tr><td colspan="7" class="empty-cell">Loading...</td></tr>
             </tbody>
         </table>
     </div>

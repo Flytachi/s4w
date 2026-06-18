@@ -1,10 +1,10 @@
 <div class="page-header">
     <div>
-        <h1>Обзор file store</h1>
-        <p>Единый центр управления клиентами, bucket-хранилищами, лимитами и файлами.</p>
+        <h1>File store overview</h1>
+        <p>Unified control center for clients, bucket storages, limits and files.</p>
     </div>
     <div class="page-actions">
-        <button class="btn btn-secondary" onclick="showStorageModal()"><i class="fas fa-server"></i>Новое хранилище</button>
+        <button class="btn btn-secondary" onclick="showStorageModal()"><i class="fas fa-server"></i>New storage</button>
     </div>
 </div>
 
@@ -12,35 +12,35 @@
 
 <section class="dashboard-layout">
     <div class="panel glass">
-        <div class="panel-title"><h3>Использование квоты</h3><span>занято / свободно, GB</span></div>
+        <div class="panel-title"><h3>Quota usage</h3><span>used / free, GB</span></div>
         <div class="chart-box"><canvas id="usageChart"></canvas></div>
     </div>
     <div class="panel glass">
-        <div class="panel-title"><h3>Хранилища по статусам</h3><span>ACTIVE / PENDING / INACTIVE / CREATED</span></div>
+        <div class="panel-title"><h3>Storages by status</h3><span>ACTIVE / PENDING / INACTIVE / CREATED</span></div>
         <div class="chart-box"><canvas id="trafficChart"></canvas></div>
     </div>
 </section>
 
 <section class="panel glass">
     <div class="panel-title">
-        <h3>Хранилища под наблюдением</h3>
-        <a class="btn btn-secondary" href="/web/storages"><i class="fas fa-arrow-right"></i>Открыть список</a>
+        <h3>Monitored storages</h3>
+        <a class="btn btn-secondary" href="/web/storages"><i class="fas fa-arrow-right"></i>Open list</a>
     </div>
     <div class="table-wrap">
         <table class="glass-table">
             <thead>
             <tr>
-                <th>Название</th>
-                <th>Описание</th>
-                <th>Квота</th>
-                <th class="col-center">Статус</th>
-                <th>Дата создания</th>
-                <th>Дата изменения</th>
-                <th class="col-right">Действия</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Quota</th>
+                <th class="col-center">Status</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th class="col-right">Actions</th>
             </tr>
             </thead>
             <tbody id="overview-instance-rows">
-            <tr><td colspan="7" class="empty-cell">Загрузка через API...</td></tr>
+            <tr><td colspan="7" class="empty-cell">Loading...</td></tr>
             </tbody>
         </table>
     </div>

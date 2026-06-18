@@ -11,8 +11,10 @@ use Flytachi\Winter\K2\Route\Annotation\RequestMapping;
 use Flytachi\Winter\K2\Stereotype\Controller;
 use Main\Services\MediaService;
 
+// Приватная отдача (требует instance-токен): /p/{id}, /p/{section}/{id}.
+// Публичная (root + публичные секции, без токена) — в PublicMediaController (/o).
 #[InstanceTokenMiddleware]
-#[RequestMapping('media')]
+#[RequestMapping('p')]
 class MediaController extends Controller
 {
     #[Autowired]

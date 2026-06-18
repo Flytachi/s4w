@@ -14,12 +14,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const transitionLinks = document.querySelectorAll('[data-transition-link]');
     const logout = document.querySelector('[data-logout]');
 
-    window.showClientModal = () => showInstanceModal('Создать клиента');
-    window.showStorageModal = () => showInstanceModal('Создать хранилище');
+    window.showClientModal = () => showInstanceModal('New client');
+    window.showStorageModal = () => showInstanceModal('New storage');
     window.showFileUploadModal = showFileUploadModal;
+    window.showCreateFolderModal = showCreateFolderModal;
     window.closeModal = closeModal;
     window.showAlert = showAlert;
     window.toggleFrozen = id => showTokenModal(id);
+    window.checkToken = id => showValidateTokenModal(id);
+    window.copyInstanceId = id => copyText(id, 'Storage ID');
     window.editInstance = id => showInstanceEditModal(id);
     let openMenu = null;
     let openMenuHome = null; // {parent, nextSibling} — куда вернуть портал
@@ -69,8 +72,27 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('scroll', closeAllDropdowns, true);
     window.addEventListener('resize', closeAllDropdowns);
     window.downloadFile = (id, name) => downloadFileBlob(id, name);
-    window.previewFile = (id, name) => showFilePreviewModal(id, name);
+    window.previewFile = (id, name, size) => showFilePreviewModal(id, name, size);
     window.deleteFile = (id, name) => showFileDeleteModal(id, name);
+    window.renameFile = (id, name) => showRenameFileModal(id, name);
+    window.moveFile = (id, name) => showMoveFileModal(id, name);
+    window.renameSectionPrompt = name => showRenameSectionModal(name);
+    window.deleteSectionPrompt = name => showDeleteSectionModal(name);
+    window.toggleSectionVisibility = async (section, makePublic) => {
+        try {
+            await apiJson(`/s4w/instances/${state.selectedInstanceId}/files/sections/visibility`, {
+                method: 'PATCH',
+                body: JSON.stringify({ section, public: makePublic }),
+            });
+        } catch (error) {
+            if (error.message !== 'unauthorized') {
+                showAlert('danger', 'Error', error.message || 'Failed to change section visibility');
+            }
+            return;
+        }
+        showAlert('success', makePublic ? 'Section is public' : 'Section is private', section);
+        await reloadFiles();
+    };
 
     if (searchInput) {
         searchInput.addEventListener('input', () => {
@@ -90,8 +112,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (quickClient) quickClient.addEventListener('click', () => showInstanceModal('Создать клиента'));
-    if (quickStorage) quickStorage.addEventListener('click', () => showInstanceModal('Создать хранилище'));
+    if (quickClient) quickClient.addEventListener('click', () => showInstanceModal('New client'));
+    if (quickStorage) quickStorage.addEventListener('click', () => showInstanceModal('New storage'));
     if (logout) {
         logout.addEventListener('click', event => {
             event.preventDefault();
@@ -116,8 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initPage().catch(error => {
         if (error.message === 'unauthorized') return;
-        showAlert('danger', 'Ошибка API', error.message || 'Не удалось загрузить данные');
-        renderEmptyStates('Не удалось загрузить данные через API');
+        showAlert('danger', 'API error', error.message || 'Failed to load data');
+        renderEmptyStates('Failed to load data via API');
     });
 
     async function initPage() {
@@ -141,11 +163,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function showInitialLoaders() {
         ['overview-stats', 'analytics-stats', 'client-grid'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) el.innerHTML = spinnerBlock('Загрузка данных через API...');
+            if (el) el.innerHTML = spinnerBlock('Loading data via API...');
         });
         ['overview-instance-rows', 'storage-rows'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) el.innerHTML = spinnerRow(7, 'Загрузка через API...');
+            if (el) el.innerHTML = spinnerRow(7, 'Loading...');
         });
     }
 
@@ -207,6 +229,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return path;
     }
 
+    // URL media-эндпоинта с учётом секции: для файла в корне /media/{id},
+    // для файла в секции /media/{section}/{id} (root-форма отдаёт 404 на section-файле).
+    // Отображаемые файлы всегда принадлежат текущей state.selectedSection.
+    function mediaPath(id) {
+        const base = `/s4w/instances/${state.selectedInstanceId}/media`;
+        return state.selectedSection
+            ? `${base}/${encodeURIComponent(state.selectedSection)}/${id}`
+            : `${base}/${id}`;
+    }
+
     function renderOverview() {
         const totalQuota = sum(state.instances, item => bytes(item).quota);
         const totalUsed = sum(state.instances, item => bytes(item).used);
@@ -215,13 +247,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('overview-stats').innerHTML = [
             statCard('success', 'fa-building', `${activeCount} active`, state.instances.length, 'Instance'),
-            statCard('warning', 'fa-database', `${pendingCount} pending`, state.instances.length, 'Хранилища'),
-            statCard('info', 'fa-hard-drive', `${percent(totalUsed, totalQuota)}% от лимита`, formatBytes(totalUsed), 'Использовано'),
-            statCard('success', 'fa-cubes', 'из API', formatBytes(totalQuota), 'Общая квота'),
+            statCard('warning', 'fa-database', `${pendingCount} pending`, state.instances.length, 'Storages'),
+            statCard('info', 'fa-hard-drive', `${percent(totalUsed, totalQuota)}% of limit`, formatBytes(totalUsed), 'Used'),
+            statCard('success', 'fa-cubes', 'from API', formatBytes(totalQuota), 'Total quota'),
         ].join('');
 
         const rows = document.getElementById('overview-instance-rows');
-        rows.innerHTML = state.instances.slice(0, 5).map(instanceRow).join('') || emptyRow(7, 'Instance не найдены');
+        rows.innerHTML = state.instances.slice(0, 5).map(instanceRow).join('') || emptyRow(7, 'No instances found');
 
         initOverviewCharts?.(chartState());
     }
@@ -251,12 +283,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </article>
             `;
-        }).join('') || emptyBlock('Instance не найдены');
+        }).join('') || emptyBlock('No instances found');
     }
 
     function renderStorages() {
         const rows = document.getElementById('storage-rows');
-        rows.innerHTML = state.instances.map(instanceRow).join('') || emptyRow(7, 'Instance не найдены');
+        rows.innerHTML = state.instances.map(instanceRow).join('') || emptyRow(7, 'No instances found');
     }
 
     function instanceRow(instance) {
@@ -264,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const quota = bytes(instance).quota;
         const pct = percent(used, quota);
         return `
-            <tr data-search="${searchKey(`${instance.name} ${instance.description}`)}">
+            <tr data-search="${searchKey(`${instance.name} ${instance.description} ${instance.id}`)}">
                 <td><strong>${escapeHtml(instance.name)}</strong></td>
                 <td>${escapeHtml(instance.description || '')}</td>
                 <td>
@@ -278,13 +310,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${formatDate(instance.updatedAt)}</td>
                 <td class="col-right">
                     <div class="row-actions">
-                        <button class="icon-btn-sm" title="Токены" onclick="toggleFrozen('${escapeAttr(instance.id)}')"><i class="fas fa-key"></i></button>
-                        <a class="icon-btn-sm" title="Файлы" href="/web/files?storage=${encodeURIComponent(instance.id)}"><i class="fas fa-folder-open"></i></a>
+                        <a class="icon-btn-sm" title="Files" href="/web/files?storage=${encodeURIComponent(instance.id)}"><i class="fas fa-folder-open"></i></a>
                         <div class="dropdown">
-                            <button class="icon-btn-sm" title="Настройки" onclick="toggleDropdown(event)"><i class="fas fa-gear"></i></button>
+                            <button class="icon-btn-sm" title="Actions" onclick="toggleDropdown(event)"><i class="fas fa-ellipsis-vertical"></i></button>
                             <div class="dropdown-menu">
-                                <button type="button" onclick="editInstance('${escapeAttr(instance.id)}')"><i class="fas fa-pen"></i>Редактировать</button>
-                                <button type="button" class="danger" onclick="deleteInstance('${escapeAttr(instance.id)}')"><i class="fas fa-trash"></i>Удалить</button>
+                                <button type="button" onclick="copyInstanceId('${escapeAttr(instance.id)}')"><i class="fas fa-copy"></i>Copy ID</button>
+                                <button type="button" onclick="toggleFrozen('${escapeAttr(instance.id)}')"><i class="fas fa-key"></i>Tokens</button>
+                                <button type="button" onclick="editInstance('${escapeAttr(instance.id)}')"><i class="fas fa-pen"></i>Edit</button>
+                                <button type="button" class="danger" onclick="deleteInstance('${escapeAttr(instance.id)}')"><i class="fas fa-trash"></i>Delete</button>
                             </div>
                         </div>
                     </div>
@@ -296,9 +329,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderFilesPage() {
         const select = document.getElementById('file-instance-select');
         if (!state.instances.length) {
-            select.innerHTML = '<option value="">Нет instance</option>';
-            document.getElementById('file-instance-card').innerHTML = emptyBlock('Создайте instance для работы с файлами');
-            document.getElementById('file-list').innerHTML = emptyBlock('Файлы не загружены');
+            select.innerHTML = '<option value="">No instances</option>';
+            document.getElementById('file-instance-card').innerHTML = emptyBlock('Create an instance to work with files');
+            document.getElementById('file-list').innerHTML = emptyBlock('No files uploaded');
             return;
         }
 
@@ -309,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
             && state.instances.some(item => item.id === state.selectedInstanceId);
         if (!valid) state.selectedInstanceId = '';
 
-        const placeholder = `<option value="" ${state.selectedInstanceId ? '' : 'selected'}>— Выберите хранилище —</option>`;
+        const placeholder = `<option value="" ${state.selectedInstanceId ? '' : 'selected'}>— Select storage —</option>`;
         select.innerHTML = placeholder + state.instances.map(item => `
             <option value="${escapeAttr(item.id)}" ${item.id === state.selectedInstanceId ? 'selected' : ''}>${escapeHtml(item.name)}</option>
         `).join('');
@@ -321,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (searchInput) {
             searchInput.value = state.fileSearch;
-            searchInput.placeholder = 'Поиск по имени файла...';
+            searchInput.placeholder = 'Search by file name...';
         }
 
         // Ничего не выбрано — приглашаем выбрать хранилище.
@@ -329,11 +362,11 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('file-instance-card').innerHTML = `
                 <div class="file-empty-pick">
                     <i class="fas fa-hand-pointer"></i>
-                    <p>Выберите хранилище в списке выше, чтобы увидеть его файлы и секции.</p>
+                    <p>Select a storage above to see its files and sections.</p>
                 </div>
             `;
             document.getElementById('file-breadcrumbs').innerHTML = '';
-            document.getElementById('file-list').innerHTML = emptyBlock('Хранилище не выбрано');
+            document.getElementById('file-list').innerHTML = emptyBlock('No storage selected');
             return;
         }
 
@@ -355,21 +388,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             ${instance.description ? `<p class="fi-desc">${escapeHtml(instance.description)}</p>` : ''}
+            <button type="button" class="fi-id" onclick="copyInstanceId('${escapeAttr(instance.id)}')" title="Copy storage ID">
+                <span class="fi-id-label">ID</span>
+                <code>${escapeHtml(instance.id)}</code>
+                <i class="fas fa-copy"></i>
+            </button>
             <div class="fi-quota">
                 <div class="fi-quota-top">
-                    <span>Использовано</span>
+                    <span>Used</span>
                     <b>${pct}%</b>
                 </div>
                 <div class="progress"><span style="width:${pct}%"></span></div>
                 <div class="fi-quota-bottom">
                     <span>${formatBytes(used)}</span>
-                    <span>из ${formatBytes(quota)}</span>
+                    <span>of ${formatBytes(quota)}</span>
                 </div>
+            </div>
+            <div class="fi-actions">
+                <button class="btn btn-secondary" onclick="toggleFrozen('${escapeAttr(instance.id)}')">
+                    <i class="fas fa-key"></i>Tokens
+                </button>
+                <button class="btn btn-secondary" onclick="checkToken('${escapeAttr(instance.id)}')">
+                    <i class="fas fa-shield-halved"></i>Check token
+                </button>
             </div>
         `;
     }
 
-    // Перечитывает инстансы из API и обновляет карточку выбранного (квота/used).
+    // Перечитывает инстансы from API и обновляет карточку выбранного (квота/used).
     async function refreshInstanceInfo() {
         try {
             state.instances = await loadInstances();
@@ -390,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
         crumbs.innerHTML = section
             ? `<button type="button" onclick="openSection(null)">root</button><span class="crumb-sep">/</span><button type="button" class="crumb-current">${escapeHtml(section)}</button>`
             : `<button type="button" class="crumb-current">root</button>`;
-        list.innerHTML = emptyBlock('Загрузка файлов через API...');
+        list.innerHTML = emptyBlock('Loading files via API...');
 
         try {
             const params = new URLSearchParams({ limit: '50', page: '1' });
@@ -406,25 +452,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const emptyMsg = search
-                ? `Ничего не найдено по запросу «${search}»`
-                : (section ? 'Папка пуста' : 'Файлы не найдены');
+                ? `Nothing found for "${search}"`
+                : (section ? 'Folder is empty' : 'No files found');
 
             const parts = [];
             if (folders.length) {
-                parts.push(`<div class="section-label"><i class="fas fa-folder"></i> Секции</div>`);
+                parts.push(`<div class="section-label"><i class="fas fa-folder"></i> Sections</div>`);
                 parts.push(`<div class="section-grid">${folders.map(folderChip).join('')}</div>`);
             }
             if (items.length) {
-                if (folders.length) parts.push(`<div class="section-label"><i class="fas fa-file"></i> Файлы</div>`);
+                if (folders.length) parts.push(`<div class="section-label"><i class="fas fa-file"></i> Files</div>`);
                 parts.push(`<div class="file-rows">${items.map(fileRow).join('')}</div>`);
             } else if (!folders.length) {
                 parts.push(emptyBlock(emptyMsg));
             } else {
-                parts.push(emptyBlock(section ? 'Папка пуста' : 'В корне нет файлов'));
+                parts.push(emptyBlock(section ? 'Folder is empty' : 'No files in root'));
             }
             list.innerHTML = parts.join('');
         } catch (error) {
-            list.innerHTML = emptyBlock('File API пока не отвечает для выбранного instance');
+            list.innerHTML = emptyBlock('File API is not responding for the selected instance');
         }
     }
 
@@ -445,11 +491,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function folderChip(folder) {
         const name = typeof folder === 'string' ? folder : folder.name;
+        const isPublic = typeof folder === 'object' && !!folder.public;
         return `
-            <button type="button" class="section-chip" data-search="${searchKey(name)}" onclick="openSection('${escapeAttr(name)}')">
-                <i class="fas fa-folder"></i>
-                <span class="section-chip-name">${escapeHtml(name)}</span>
-            </button>
+            <div class="section-chip" data-search="${searchKey(name)}">
+                <button type="button" class="section-chip-open" onclick="openSection('${escapeAttr(name)}')">
+                    <i class="fas fa-folder"></i>
+                    <span class="section-chip-name">${escapeHtml(name)}</span>
+                    <i class="fas ${isPublic ? 'fa-globe section-vis-pub' : 'fa-lock section-vis-priv'}" title="${isPublic ? 'Public section' : 'Private section'}"></i>
+                </button>
+                <div class="dropdown">
+                    <button type="button" class="section-chip-edit" title="Actions" onclick="toggleDropdown(event)">
+                        <i class="fas fa-ellipsis-vertical"></i>
+                    </button>
+                    <div class="dropdown-menu">
+                        <button type="button" onclick="toggleSectionVisibility('${escapeAttr(name)}', ${isPublic ? 'false' : 'true'})"><i class="fas ${isPublic ? 'fa-lock' : 'fa-globe'}"></i>${isPublic ? 'Make private' : 'Make public'}</button>
+                        <button type="button" onclick="renameSectionPrompt('${escapeAttr(name)}')"><i class="fas fa-pen"></i>Rename</button>
+                        <button type="button" class="danger" onclick="deleteSectionPrompt('${escapeAttr(name)}')"><i class="fas fa-trash"></i>Delete</button>
+                    </div>
+                </div>
+            </div>
         `;
     }
 
@@ -485,7 +545,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const date = formatDate(file.updatedAt || file.updated_at || file.createdAt || file.created_at);
         const meta = [ext, formatBytes(size), date].filter(Boolean).join(' · ');
         const dedup = file.deduplicated
-            ? ' <span class="file-tag dedup" title="Дедуплицирован: контент уже хранился, место не занято повторно">dedup</span>'
+            ? ' <span class="file-tag dedup" title="Deduplicated: content already existed, no extra space used">dedup</span>'
+            : '';
+        // Публичный файл → иконка-ссылка на /o URL (открывается в новой вкладке).
+        const publicLink = file.publicUrl
+            ? `<a class="icon-btn glass-btn file-public-link" href="${escapeAttr(file.publicUrl)}" target="_blank" rel="noopener" title="Public link"><i class="fas fa-arrow-up-right-from-square"></i></a>`
             : '';
         return `
             <div class="file-row" data-id="${escapeAttr(id)}" data-search="${searchKey(name)}">
@@ -493,15 +557,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="file-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
                 <small title="${escapeAttr(file.mime || '')}">${escapeHtml(meta)}${dedup}</small>
                 <div class="row-actions">
-                    <button class="icon-btn glass-btn" title="Просмотр" onclick="previewFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="icon-btn glass-btn" title="Скачать" onclick="downloadFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="icon-btn glass-btn" title="Удалить" onclick="deleteFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                    ${publicLink}
+                    <div class="dropdown">
+                        <button class="icon-btn glass-btn" title="Actions" onclick="toggleDropdown(event)"><i class="fas fa-ellipsis-vertical"></i></button>
+                        <div class="dropdown-menu">
+                            <button type="button" onclick="previewFile('${escapeAttr(id)}', '${escapeAttr(name)}', ${Number(size) || 0})"><i class="fas fa-eye"></i>Preview</button>
+                            <button type="button" onclick="downloadFile('${escapeAttr(id)}', '${escapeAttr(name)}')"><i class="fas fa-download"></i>Download</button>
+                            <button type="button" onclick="renameFile('${escapeAttr(id)}', '${escapeAttr(name)}')"><i class="fas fa-pen"></i>Rename</button>
+                            <button type="button" onclick="moveFile('${escapeAttr(id)}', '${escapeAttr(name)}')"><i class="fas fa-arrow-right-arrow-left"></i>Move</button>
+                            <button type="button" class="danger" onclick="deleteFile('${escapeAttr(id)}', '${escapeAttr(name)}')"><i class="fas fa-trash"></i>Delete</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -511,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const select = document.getElementById('analytics-instance-select');
         select.innerHTML = state.instances.map(item => `
             <option value="${escapeAttr(item.id)}">${escapeHtml(item.name)}</option>
-        `).join('') || '<option value="">Нет instance</option>';
+        `).join('') || '<option value="">No instances</option>';
 
         const totalQuota = sum(state.instances, item => bytes(item).quota);
         const totalUsed = sum(state.instances, item => bytes(item).used);
@@ -521,10 +587,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const avgUsed = count ? totalUsed / count : 0;
 
         document.getElementById('analytics-stats').innerHTML = [
-            statCard('info', 'fa-gauge-high', `${formatBytes(totalUsed)} занято`, `${percent(totalUsed, totalQuota)}%`, 'Общая квота'),
+            statCard('info', 'fa-gauge-high', `${formatBytes(totalUsed)} used`, `${percent(totalUsed, totalQuota)}%`, 'Total quota'),
             statCard('warning', 'fa-server', `${activeCount} active`, count, 'Instance'),
-            statCard('success', 'fa-bolt', 'суммарно', formatBytes(totalQuota), 'Лимит'),
-            statCard('info', 'fa-scale-balanced', 'на instance', formatBytes(avgUsed), 'Средний объём'),
+            statCard('success', 'fa-bolt', 'total', formatBytes(totalQuota), 'Limit'),
+            statCard('info', 'fa-scale-balanced', 'per instance', formatBytes(avgUsed), 'Average size'),
         ].join('');
 
         initAnalyticsCharts?.(chartState());
@@ -532,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Реальное распределение форматов для выбранного instance (раньше селект был мёртвый).
         const refreshFormats = async () => {
             if (!select.value) {
-                updateFormatChart?.({ 'нет данных': 1 });
+                updateFormatChart?.({ 'no data': 1 });
                 return;
             }
             const dist = await loadFormatDistribution(select.value);
@@ -551,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 counts[ext] = (counts[ext] || 0) + 1;
             });
         } catch (_) { /* график останется с заглушкой */ }
-        return Object.keys(counts).length ? counts : { 'нет файлов': 1 };
+        return Object.keys(counts).length ? counts : { 'no files': 1 };
     }
 
     function chartState() {
@@ -583,17 +649,17 @@ document.addEventListener('DOMContentLoaded', () => {
             <h3>${escapeHtml(title)}</h3>
             <form id="instance-form" class="admin-form">
                 <div class="form-group">
-                    <label>Название</label>
+                    <label>Name</label>
                     <input name="name" class="glass-input" required maxlength="100">
                 </div>
                 <div class="form-group">
-                    <label>Описание <span class="optional-hint">— необязательно</span></label>
-                    <input name="description" class="glass-input" maxlength="200" placeholder="Опционально">
+                    <label>Description <span class="optional-hint">— optional</span></label>
+                    <input name="description" class="glass-input" maxlength="200" placeholder="Optional">
                 </div>
                 ${quotaField(500, 'MB')}
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                    <button class="btn btn-primary" type="submit">Создать</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Create</button>
                 </div>
             </form>
         `);
@@ -613,12 +679,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
             } catch (error) {
                 if (error.message !== 'unauthorized') {
-                    showAlert('danger', 'Ошибка создания', error.message || 'Не удалось создать хранилище');
+                    showAlert('danger', 'Creation error', error.message || 'Failed to create storage');
                 }
                 return;
             }
             closeModal();
-            showAlert('success', 'Создано', String(data.get('name')));
+            showAlert('success', 'Created', String(data.get('name')));
             state.instances = await loadInstances();
             refreshCurrentPage();
         });
@@ -627,25 +693,25 @@ document.addEventListener('DOMContentLoaded', () => {
     function showInstanceEditModal(id) {
         const instance = state.instances.find(item => item.id === id);
         if (!instance) {
-            showAlert('warning', 'Не найдено', 'Хранилище не найдено');
+            showAlert('warning', 'Not found', 'Storage not found');
             return;
         }
         const quota = splitQuota(bytes(instance).quota);
         openModal(`
-            <h3>Редактировать хранилище</h3>
+            <h3>Edit storage</h3>
             <form id="instance-edit-form" class="admin-form">
                 <div class="form-group">
-                    <label>Название</label>
+                    <label>Name</label>
                     <input name="name" class="glass-input" required maxlength="100" value="${escapeAttr(instance.name)}">
                 </div>
                 <div class="form-group">
-                    <label>Описание <span class="optional-hint">— необязательно</span></label>
-                    <input name="description" class="glass-input" maxlength="200" placeholder="Опционально" value="${escapeAttr(instance.description || '')}">
+                    <label>Description <span class="optional-hint">— optional</span></label>
+                    <input name="description" class="glass-input" maxlength="200" placeholder="Optional" value="${escapeAttr(instance.description || '')}">
                 </div>
                 ${quotaField(quota.value, quota.unit)}
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                    <button class="btn btn-primary" type="submit">Сохранить</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Save</button>
                 </div>
             </form>
         `);
@@ -665,31 +731,76 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
             } catch (error) {
                 if (error.message !== 'unauthorized') {
-                    showAlert('danger', 'Ошибка сохранения', error.message || 'Не удалось сохранить хранилище');
+                    showAlert('danger', 'Save error', error.message || 'Failed to save storage');
                 }
                 return;
             }
             closeModal();
-            showAlert('success', 'Сохранено', String(data.get('name')));
+            showAlert('success', 'Saved', String(data.get('name')));
             state.instances = await loadInstances();
             refreshCurrentPage();
+        });
+    }
+
+    function showValidateTokenModal(instanceId) {
+        openModal(`
+            <h3>Check token</h3>
+            <form id="token-validate-form" class="admin-form">
+                <div class="form-group">
+                    <label>Token</label>
+                    <input name="token" class="glass-input" required placeholder="s4w_..." autocomplete="off">
+                </div>
+                <div id="token-validate-result"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+                    <button class="btn btn-primary" type="submit">Check</button>
+                </div>
+            </form>
+        `);
+        document.getElementById('token-validate-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const token = String(new FormData(event.currentTarget).get('token') || '').trim();
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            const result = document.getElementById('token-validate-result');
+            if (!token) return;
+            let data;
+            try {
+                data = await withBtnLoading(submitBtn, () => apiJson(
+                    `/s4w/instances/${instanceId}/tokens/validation`,
+                    { method: 'POST', body: JSON.stringify({ token }) },
+                ));
+            } catch (error) {
+                if (error.message === 'unauthorized') return;
+                result.innerHTML = `<div class="validate-result invalid"><i class="fas fa-circle-xmark"></i> Token is invalid</div>`;
+                return;
+            }
+            const active = data?.status?.id === 1;
+            result.innerHTML = `
+                <div class="validate-result valid">
+                    <i class="fas fa-circle-check"></i>
+                    <div>
+                        <strong>Token is valid</strong>
+                        <p>${escapeHtml(data?.name || '')} · <span class="token-status ${active ? 'on' : 'off'}">${escapeHtml(data?.status?.name || '')}</span></p>
+                    </div>
+                </div>
+            `;
         });
     }
 
     async function showTokenModal(instanceId) {
         const instance = state.instances.find(item => item.id === instanceId);
         openModal(`
-            <h3>Токены: ${escapeHtml(instance?.name || instanceId)}</h3>
+            <h3>Tokens: ${escapeHtml(instance?.name || instanceId)}</h3>
             <div id="created-token-box"></div>
-            <div id="token-list" class="token-list">${emptyBlock('Загрузка токенов...')}</div>
+            <div id="token-list" class="token-list">${emptyBlock('Loading tokens...')}</div>
             <form id="token-form" class="admin-form">
                 <div class="form-group">
-                    <label>Новый токен</label>
-                    <input name="name" class="glass-input" required maxlength="70" placeholder="Название токена">
+                    <label>New token</label>
+                    <input name="name" class="glass-input" required maxlength="70" placeholder="Token name">
                 </div>
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
-                    <button class="btn btn-primary" type="submit">Создать токен</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+                    <button class="btn btn-primary" type="submit">Create token</button>
                 </div>
             </form>
         `);
@@ -708,13 +819,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
             } catch (error) {
                 if (error.message !== 'unauthorized') {
-                    showAlert('danger', 'Ошибка', error.message || 'Не удалось создать токен');
+                    showAlert('danger', 'Error', error.message || 'Failed to create token');
                 }
                 return;
             }
             renderCreatedToken(created?.token || '', data.get('name'));
             form.reset();
-            showAlert('success', 'Токен создан', 'Скопируйте его сейчас');
+            showAlert('success', 'Token created', 'Copy it now');
             await renderTokens(instanceId);
         });
     }
@@ -726,12 +837,12 @@ document.addEventListener('DOMContentLoaded', () => {
         box.innerHTML = `
             <div class="created-token glass">
                 <div>
-                    <strong>Токен "${escapeHtml(name || '')}"</strong>
-                    <p>Показан только один раз. Скопируйте его сейчас.</p>
+                    <strong>Token "${escapeHtml(name || '')}"</strong>
+                    <p>Shown only once. Copy it now.</p>
                 </div>
                 <code>${escapeHtml(token)}</code>
                 <button class="btn btn-secondary" id="copy-created-token" type="button">
-                    <i class="fas fa-copy"></i>Скопировать
+                    <i class="fas fa-copy"></i>Copy
                 </button>
             </div>
         `;
@@ -739,9 +850,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('copy-created-token').addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(token);
-                showAlert('success', 'Скопировано', 'Токен в буфере обмена');
+                showAlert('success', 'Copied', 'Token copied to clipboard');
             } catch (_) {
-                showAlert('warning', 'Не удалось скопировать', 'Скопируйте токен вручную');
+                showAlert('warning', 'Failed to copy', 'Copy the token manually');
             }
         });
     }
@@ -758,19 +869,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span>${escapeHtml(token.name)}</span>
                 <small><span class="token-status ${active ? 'on' : 'off'}">${escapeHtml(token.status?.name || '')}</span> · ${formatDate(token.createdAt)}</small>
                 <div class="row-actions">
-                    <button class="icon-btn glass-btn token-toggle ${active ? 'is-active' : ''}" title="${active ? 'Выключить токен' : 'Включить токен'}" onclick="changeTokenStatus('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', ${active ? 0 : 1})">
+                    <button class="icon-btn glass-btn token-toggle ${active ? 'is-active' : ''}" title="${active ? 'Disable token' : 'Enable token'}" onclick="changeTokenStatus('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', ${active ? 0 : 1})">
                         <i class="fas ${active ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
                     </button>
-                    <button class="icon-btn glass-btn" title="Перевыпустить токен" onclick="regenerateToken('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', '${escapeAttr(token.name)}')">
+                    <button class="icon-btn glass-btn" title="Regenerate token" onclick="regenerateToken('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', '${escapeAttr(token.name)}')">
                         <i class="fas fa-rotate"></i>
                     </button>
-                    <button class="icon-btn glass-btn token-delete" title="Удалить токен" onclick="deleteToken('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', '${escapeAttr(token.name)}')">
+                    <button class="icon-btn glass-btn token-delete" title="Delete token" onclick="deleteToken('${escapeAttr(instanceId)}', '${escapeAttr(token.id)}', '${escapeAttr(token.name)}')">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </div>
         `;
-        }).join('') || emptyBlock('Токены не найдены');
+        }).join('') || emptyBlock('No tokens found');
     }
 
     window.changeTokenStatus = async (instanceId, tokenId, status) => {
@@ -778,7 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}/${status}`, { method: 'PATCH', body: '{}' });
         } catch (error) {
             if (error.message !== 'unauthorized') {
-                showAlert('danger', 'Ошибка', error.message || 'Не удалось изменить статус токена');
+                showAlert('danger', 'Error', error.message || 'Failed to change token status');
             }
             return;
         }
@@ -787,44 +898,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Перевыпуск: старый токен сразу инвалидируется, новый показываем один раз.
     window.regenerateToken = async (instanceId, tokenId, name) => {
-        if (!window.confirm('Перевыпустить токен? Старый токен перестанет работать немедленно.')) return;
+        if (!window.confirm('Regenerate the token? The old token will stop working immediately.')) return;
         let created;
         try {
             created = await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}`, { method: 'PATCH', body: '{}' });
         } catch (error) {
             if (error.message !== 'unauthorized') {
-                showAlert('danger', 'Ошибка', error.message || 'Не удалось перевыпустить токен');
+                showAlert('danger', 'Error', error.message || 'Failed to regenerate token');
             }
             return;
         }
         renderCreatedToken(created?.token || '', name);
-        showAlert('success', 'Токен перевыпущен', 'Скопируйте новый токен сейчас');
+        showAlert('success', 'Token regenerated', 'Copy the new token now');
         await renderTokens(instanceId);
     };
 
     window.deleteToken = async (instanceId, tokenId, name) => {
-        if (!window.confirm(`Удалить токен «${name}»? Действие необратимо.`)) return;
+        if (!window.confirm(`Delete token "${name}"? This cannot be undone.`)) return;
         try {
             await apiJson(`/s4w/instances/${instanceId}/tokens/${tokenId}`, { method: 'DELETE' });
         } catch (error) {
             if (error.message !== 'unauthorized') {
-                showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить токен');
+                showAlert('danger', 'Delete error', error.message || 'Failed to delete token');
             }
             return;
         }
         const box = document.getElementById('created-token-box');
         if (box) box.innerHTML = '';
-        showAlert('success', 'Токен удалён', name);
+        showAlert('success', 'Token deleted', name);
         await renderTokens(instanceId);
     };
 
     window.deleteInstance = id => {
         openModal(`
-            <h3>Удалить хранилище?</h3>
-            <p class="modal-text">Это действие нельзя будет отменить. Хранилище будет удалено.</p>
+            <h3>Delete storage?</h3>
+            <p class="modal-text">This action cannot be undone. The storage will be deleted.</p>
             <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                <button class="btn btn-danger" id="confirm-delete-btn">Удалить</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-delete-btn">Delete</button>
             </div>
         `);
 
@@ -832,61 +943,110 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 await withBtnLoading(event.currentTarget, () => apiJson(`/s4w/instances/${id}`, { method: 'DELETE' }));
                 closeModal();
-                showAlert('success', 'Хранилище удаляется', 'Страница будет обновлена');
+                showAlert('success', 'Storage is being deleted', 'The page will refresh');
                 window.setTimeout(() => {
                     window.location.reload();
                 }, 1400);
             } catch (error) {
                 if (error.message !== 'unauthorized') {
-                    showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить хранилище');
+                    showAlert('danger', 'Delete error', error.message || 'Failed to delete storage');
                 }
             }
         });
     };
 
+    function showCreateFolderModal() {
+        if (!state.selectedInstanceId) {
+            showAlert('warning', 'No storage selected', 'Select a storage first');
+            return;
+        }
+        openModal(`
+            <h3>New folder</h3>
+            <form id="folder-form" class="admin-form">
+                <div class="form-group">
+                    <label>Section name</label>
+                    <input name="name" class="glass-input" required autofocus
+                        pattern="^[A-Za-z0-9][A-Za-z0-9_\\-]{0,99}$"
+                        placeholder="Latin letters, digits, _ and -">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input name="public" type="checkbox" value="1">
+                        <span>Public (files accessible by direct link without a token)</span>
+                    </label>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Create</button>
+                </div>
+            </form>
+        `);
+        document.getElementById('folder-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const name = String(data.get('name') || '').trim();
+            const isPublic = data.get('public') === '1';
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            if (!name) return;
+            try {
+                await withBtnLoading(submitBtn, () => apiJson(`/s4w/instances/${state.selectedInstanceId}/files/sections`, {
+                    method: 'POST',
+                    body: JSON.stringify({ name, public: isPublic }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Error', error.message || 'Failed to create folder');
+                }
+                return;
+            }
+            closeModal();
+            showAlert('success', 'Folder created', name);
+            await reloadFiles();
+        });
+    }
+
     function showFileUploadModal() {
         if (!state.selectedInstanceId) {
-            showAlert('warning', 'Instance не выбран', 'Выберите instance для загрузки файла');
+            showAlert('warning', 'No instance selected', 'Select an instance to upload a file');
             return;
         }
 
         openModal(`
-            <h3>Загрузить файл</h3>
+            <h3>Upload file</h3>
             <form id="file-upload-form" class="admin-form">
                 <div class="form-group">
-                    <label>Файл <span class="required-mark" title="Обязательное поле">*</span></label>
+                    <label>File <span class="required-mark" title="Required field">*</span></label>
                     <input id="upload-file-input" name="file" type="file" class="file-native-input" required>
                     <button id="upload-file-trigger" class="file-picker-btn" type="button">
                         <i class="fas fa-folder-open"></i>
-                        <span id="upload-file-label">Выбрать файл</span>
+                        <span id="upload-file-label">Choose file</span>
                     </button>
                 </div>
-                <div class="form-divider"><span>Опциональные параметры</span></div>
+                <div class="form-divider"><span>Optional parameters</span></div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Секция (папка)</label>
-                        <input name="section" class="glass-input" list="upload-section-options"
-                            pattern="^[A-Za-z0-9][A-Za-z0-9_\-]{0,99}$"
-                            placeholder="Латиница, цифры, _ и -">
-                        <datalist id="upload-section-options"></datalist>
+                        <label>Section (folder)</label>
+                        <select name="section" id="upload-section-input" class="glass-input">
+                            <option value="">— Root —</option>
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label>Имя</label>
-                        <input name="name" class="glass-input" placeholder="Как у файла, если пусто">
+                        <label>Name</label>
+                        <input name="name" class="glass-input" placeholder="Same as file if empty">
                     </div>
                 </div>
                 <div id="upload-image-options" hidden>
                     <div class="form-group">
                         <label class="range-label">
-                            <span>Сжатие изображения</span>
-                            <span id="upload-compress-value" class="range-value">Без сжатия</span>
+                            <span>Image compression</span>
+                            <span id="upload-compress-value" class="range-value">No compression</span>
                         </label>
                         <input id="upload-compress-input" name="compress" type="range" min="0" max="100" step="1" value="0" class="range-input">
                     </div>
                     <div class="form-group">
                         <label class="checkbox-label">
                             <input id="upload-webp-input" name="webp" type="checkbox" value="1">
-                            <span>Конвертировать в WebP</span>
+                            <span>Convert to WebP</span>
                         </label>
                     </div>
                 </div>
@@ -895,8 +1055,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <small id="upload-progress-text">0%</small>
                 </div>
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                    <button class="btn btn-primary" type="submit">Загрузить</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Upload</button>
                 </div>
             </form>
         `);
@@ -905,19 +1065,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileLabel = document.getElementById('upload-file-label');
         const compressInput = document.getElementById('upload-compress-input');
         const compressValue = document.getElementById('upload-compress-value');
-        const sectionList = document.getElementById('upload-section-options');
+        // Строгий select секций: только существующие (+ Корень), без автосоздания.
+        const sectionSelect = document.getElementById('upload-section-input');
         safeApi(`/s4w/instances/${state.selectedInstanceId}/files/sections`).then(res => {
-            const items = listOf(res);
-            sectionList.innerHTML = items
-                .map(s => `<option value="${escapeAttr(typeof s === 'string' ? s : s.name)}"></option>`)
-                .join('');
+            listOf(res).forEach(s => {
+                const name = typeof s === 'string' ? s : s.name;
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                if (name === state.selectedSection) opt.selected = true;
+                sectionSelect.appendChild(opt);
+            });
         }).catch(() => {});
         const imageOptions = document.getElementById('upload-image-options');
         const webpInput = document.getElementById('upload-webp-input');
         document.getElementById('upload-file-trigger').addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', () => {
             const f = fileInput.files[0];
-            fileLabel.textContent = f ? `${f.name} · ${formatBytes(f.size)}` : 'Выбрать файл';
+            fileLabel.textContent = f ? `${f.name} · ${formatBytes(f.size)}` : 'Choose file';
             // Сжатие/WebP поддерживаются только для изображений — показываем опции
             // лишь для них. Иначе скрываем и сбрасываем, чтобы не уходили в запрос.
             const isImage = !!f && (f.type.startsWith('image/') || isImageExt(extOf(f.name)));
@@ -930,7 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const renderCompress = () => {
             const v = Number(compressInput.value);
-            compressValue.textContent = v === 0 ? 'Без сжатия' : `${v}%`;
+            compressValue.textContent = v === 0 ? 'No compression' : `${v}%`;
         };
         compressInput.addEventListener('input', renderCompress);
         renderCompress();
@@ -963,20 +1128,20 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 await uploadWithProgress(`/s4w/instances/${state.selectedInstanceId}/files`, body, pct => {
                     if (progressBar) progressBar.style.width = `${pct}%`;
-                    if (progressText) progressText.textContent = pct < 100 ? `${pct}%` : 'Обработка на сервере...';
+                    if (progressText) progressText.textContent = pct < 100 ? `${pct}%` : 'Processing on server...';
                 });
             } catch (error) {
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('is-loading');
-                submitBtn.innerHTML = 'Загрузить';
+                submitBtn.innerHTML = 'Upload';
                 if (progressWrap) progressWrap.hidden = true;
                 if (error.message !== 'unauthorized') {
-                    showAlert('danger', 'Ошибка загрузки', error.message || 'Не удалось загрузить файл');
+                    showAlert('danger', 'Upload error', error.message || 'Failed to upload file');
                 }
                 return;
             }
             closeModal();
-            showAlert('success', 'Файл загружен', name || (file && file.name) || 'OK');
+            showAlert('success', 'File uploaded', name || (file && file.name) || 'OK');
             // Обновляем инфо об instance (квота) и список файлов.
             await refreshInstanceInfo();
             const inst = state.instances.find(item => item.id === state.selectedInstanceId);
@@ -1015,9 +1180,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
     }
 
-    async function showFilePreviewModal(id, name) {
+    const PREVIEW_MAX_BYTES = 20 * 1024 * 1024; // превью только для файлов < 20 МБ
+
+    async function showFilePreviewModal(id, name, size = 0) {
         if (!state.selectedInstanceId) {
-            showAlert('warning', 'Instance не выбран', 'Выберите instance для предпросмотра');
+            showAlert('warning', 'No instance selected', 'Select an instance to preview');
             return;
         }
         openModal(`
@@ -1025,20 +1192,32 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="file-preview-body" id="file-preview-body">
                 <div class="file-preview-fallback">
                     <i class="fas fa-spinner fa-spin fa-2x"></i>
-                    <p>Загрузка...</p>
+                    <p>Loading...</p>
                 </div>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
                 <button class="btn btn-primary" onclick="downloadFile('${escapeAttr(id)}', '${escapeAttr(name)}')">
-                    <i class="fas fa-download"></i>Скачать
+                    <i class="fas fa-download"></i>Download
                 </button>
             </div>
         `);
 
         const container = document.getElementById('file-preview-body');
+
+        // Большие файлы не превьюим — грузить десятки МБ в браузер тяжело.
+        if (Number(size) >= PREVIEW_MAX_BYTES) {
+            container.innerHTML = `
+                <div class="file-preview-fallback">
+                    <i class="fas ${fileIconClass(name)} fa-3x"></i>
+                    <p>File ${formatBytes(size)} — too large to preview (limit 20 MB).<br>Download it to open.</p>
+                </div>
+            `;
+            return;
+        }
+
         try {
-            const response = await fetch(apiPath(`/s4w/instances/${state.selectedInstanceId}/media/${id}`), {
+            const response = await fetch(apiPath(mediaPath(id)), {
                 headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` },
             });
             if (response.status === 401 || response.status === 403) {
@@ -1077,7 +1256,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 inner = `
                     <div class="file-preview-fallback">
                         <i class="fas ${fileIconClass(name)} fa-3x"></i>
-                        <p>Предпросмотр недоступен для этого типа файла.</p>
+                        <p>Preview is not available for this file type.</p>
                     </div>
                 `;
             }
@@ -1087,7 +1266,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 container.innerHTML = `
                     <div class="file-preview-fallback">
                         <i class="fas fa-triangle-exclamation fa-2x"></i>
-                        <p>${escapeHtml(error.message || 'Не удалось загрузить файл')}</p>
+                        <p>${escapeHtml(error.message || 'Failed to upload file')}</p>
                     </div>
                 `;
             }
@@ -1096,15 +1275,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showFileDeleteModal(id, name) {
         if (!state.selectedInstanceId) {
-            showAlert('warning', 'Instance не выбран', 'Выберите instance для удаления');
+            showAlert('warning', 'No instance selected', 'Select an instance to delete');
             return;
         }
         openModal(`
-            <h3><i class="fas ${fileIconClass(name)}"></i> Удалить файл?</h3>
-            <p class="modal-text">Файл <b>${escapeHtml(name)}</b> будет удалён. Это действие нельзя отменить.</p>
+            <h3><i class="fas ${fileIconClass(name)}"></i> Delete file?</h3>
+            <p class="modal-text">File <b>${escapeHtml(name)}</b> will be deleted. This cannot be undone.</p>
             <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                <button class="btn btn-danger" id="confirm-file-delete-btn">Удалить</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-file-delete-btn">Delete</button>
             </div>
         `);
 
@@ -1112,16 +1291,181 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 await withBtnLoading(event.currentTarget, () => apiJson(`/s4w/instances/${state.selectedInstanceId}/files/${id}`, { method: 'DELETE' }));
                 closeModal();
-                showAlert('success', 'Файл удалён', name);
+                showAlert('success', 'File deleted', name);
                 // Просто убираем строку из списка (без полной перерисовки)...
                 document.querySelector(`#file-list .file-row[data-id="${id}"]`)?.remove();
                 // ...а инфо об instance (квоту) обновляем через 1 сек.
                 setTimeout(refreshInstanceInfo, 1000);
             } catch (error) {
                 if (error.message !== 'unauthorized') {
-                    showAlert('danger', 'Ошибка удаления', error.message || 'Не удалось удалить файл');
+                    showAlert('danger', 'Delete error', error.message || 'Failed to delete file');
                 }
             }
+        });
+    }
+
+    function reloadFiles() {
+        const inst = state.instances.find(item => item.id === state.selectedInstanceId);
+        return inst ? renderFiles(inst) : Promise.resolve();
+    }
+
+    function showRenameFileModal(id, currentName) {
+        if (!state.selectedInstanceId) return;
+        openModal(`
+            <h3>Rename file</h3>
+            <form id="file-rename-form" class="admin-form">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input name="name" class="glass-input" required maxlength="255" value="${escapeAttr(currentName)}">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Save</button>
+                </div>
+            </form>
+        `);
+        document.getElementById('file-rename-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const newName = String(new FormData(event.currentTarget).get('name') || '').trim();
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            if (!newName) return;
+            try {
+                await withBtnLoading(submitBtn, () => apiJson(`/s4w/instances/${state.selectedInstanceId}/files/${id}/rename`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ name: newName }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Error', error.message || 'Failed to rename');
+                }
+                return;
+            }
+            closeModal();
+            showAlert('success', 'Renamed', newName);
+            await reloadFiles();
+        });
+    }
+
+    async function showMoveFileModal(id, name) {
+        if (!state.selectedInstanceId) return;
+        openModal(`
+            <h3>Move file</h3>
+            <p class="modal-text">"${escapeHtml(name)}" — choose destination:</p>
+            <form id="file-move-form" class="admin-form">
+                <div class="form-group">
+                    <label>Section</label>
+                    <select name="section" id="move-section-select" class="glass-input">
+                        <option value="__root__">— Root —</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Move</button>
+                </div>
+            </form>
+        `);
+        const select = document.getElementById('move-section-select');
+        const res = await safeApi(`/s4w/instances/${state.selectedInstanceId}/files/sections`);
+        listOf(res).forEach(s => {
+            const sec = typeof s === 'string' ? s : s.name;
+            const opt = document.createElement('option');
+            opt.value = sec;
+            opt.textContent = sec;
+            if (sec === state.selectedSection) opt.selected = true;
+            select.appendChild(opt);
+        });
+        document.getElementById('file-move-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const section = select.value === '__root__' ? null : select.value;
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            try {
+                await withBtnLoading(submitBtn, () => apiJson(`/s4w/instances/${state.selectedInstanceId}/files/${id}/move`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ section }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Move error', error.message || 'Failed to move');
+                }
+                return;
+            }
+            closeModal();
+            showAlert('success', 'Moved', name);
+            await reloadFiles();
+        });
+    }
+
+    function showRenameSectionModal(currentSection) {
+        if (!state.selectedInstanceId) return;
+        openModal(`
+            <h3>Rename section</h3>
+            <form id="section-rename-form" class="admin-form">
+                <div class="form-group">
+                    <label>Section name</label>
+                    <input name="to" class="glass-input" required value="${escapeAttr(currentSection)}"
+                        pattern="^[A-Za-z0-9][A-Za-z0-9_\\-]{0,99}$"
+                        placeholder="Latin letters, digits, _ and -">
+                    <small class="optional-hint">Renames the section for all files in it.</small>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Save</button>
+                </div>
+            </form>
+        `);
+        document.getElementById('section-rename-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const to = String(new FormData(event.currentTarget).get('to') || '').trim();
+            const submitBtn = event.currentTarget.querySelector('button[type="submit"]');
+            if (!to || to === currentSection) {
+                closeModal();
+                return;
+            }
+            try {
+                await withBtnLoading(submitBtn, () => apiJson(`/s4w/instances/${state.selectedInstanceId}/files/sections`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ from: currentSection, to }),
+                }));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Error', error.message || 'Failed to rename section');
+                }
+                return;
+            }
+            closeModal();
+            showAlert('success', 'Section renamed', `${currentSection} → ${to}`);
+            if (state.selectedSection === currentSection) state.selectedSection = to;
+            await reloadFiles();
+        });
+    }
+
+    function showDeleteSectionModal(section) {
+        if (!state.selectedInstanceId) return;
+        openModal(`
+            <h3><i class="fas fa-folder"></i> Delete section "${escapeHtml(section)}"?</h3>
+            <p class="modal-text">The section and <b>all files inside it</b> will be permanently deleted. This cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-section-delete-btn">Delete section</button>
+            </div>
+        `);
+        document.getElementById('confirm-section-delete-btn').addEventListener('click', async event => {
+            try {
+                await withBtnLoading(event.currentTarget, () => apiJson(
+                    `/s4w/instances/${state.selectedInstanceId}/files/sections/${encodeURIComponent(section)}`,
+                    { method: 'DELETE' },
+                ));
+            } catch (error) {
+                if (error.message !== 'unauthorized') {
+                    showAlert('danger', 'Delete error', error.message || 'Failed to delete section');
+                }
+                return;
+            }
+            closeModal();
+            showAlert('success', 'Section deleted', section);
+            if (state.selectedSection === section) state.selectedSection = null;
+            await refreshInstanceInfo();
+            await reloadFiles();
         });
     }
 
@@ -1145,6 +1489,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.previewBlobUrl) {
             URL.revokeObjectURL(state.previewBlobUrl);
             state.previewBlobUrl = null;
+        }
+    }
+
+    // Копирование в буфер с fallback для не-secure контекста (http по IP).
+    async function copyText(text, label) {
+        let ok = false;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                ok = true;
+            }
+        } catch (_) { ok = false; }
+        if (!ok) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                ok = document.execCommand('copy');
+                ta.remove();
+            } catch (_) { ok = false; }
+        }
+        if (ok) {
+            showAlert('success', 'Copied', label || text);
+        } else {
+            showAlert('warning', 'Failed to copy', text);
         }
     }
 
@@ -1197,7 +1569,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function quotaField(value, unit) {
         return `
             <div class="form-group">
-                <label>Квота</label>
+                <label>Quota</label>
                 <div class="input-with-unit">
                     <input name="quota" type="number" min="1" step="1" class="glass-input" required value="${escapeAttr(String(value))}">
                     <select name="quotaUnit" class="glass-input unit-select">
@@ -1295,11 +1667,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return escapeHtml(String(value ?? '').toLowerCase());
     }
 
-    function spinnerBlock(message = 'Загрузка...') {
+    function spinnerBlock(message = 'Loading...') {
         return `<div class="loading-state"><i class="fas fa-spinner fa-spin"></i><span>${escapeHtml(message)}</span></div>`;
     }
 
-    function spinnerRow(cols, message = 'Загрузка...') {
+    function spinnerRow(cols, message = 'Loading...') {
         return `<tr><td colspan="${cols}" class="empty-cell"><span class="loading-inline"><i class="fas fa-spinner fa-spin"></i> ${escapeHtml(message)}</span></td></tr>`;
     }
 
@@ -1323,11 +1695,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // поэтому window.open сюда не годится — он не шлёт заголовок).
     async function downloadFileBlob(id, name) {
         if (!state.selectedInstanceId) {
-            showAlert('warning', 'Instance не выбран', 'Выберите instance для скачивания');
+            showAlert('warning', 'No instance selected', 'Select an instance to download');
             return;
         }
         try {
-            const response = await fetch(apiPath(`/s4w/instances/${state.selectedInstanceId}/media/${id}`), {
+            const response = await fetch(apiPath(mediaPath(id)), {
                 headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` },
             });
             if (response.status === 401 || response.status === 403) {
@@ -1346,7 +1718,7 @@ document.addEventListener('DOMContentLoaded', () => {
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch (error) {
-            showAlert('danger', 'Ошибка скачивания', error.message || 'Не удалось скачать файл');
+            showAlert('danger', 'Download error', error.message || 'Failed to download file');
         }
     }
 
@@ -1380,7 +1752,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) { /* keep default */ }
                 reject(new Error(message));
             });
-            xhr.addEventListener('error', () => reject(new Error('Сетевая ошибка при загрузке')));
+            xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
             xhr.send(formData);
         });
     }

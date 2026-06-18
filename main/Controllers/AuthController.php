@@ -26,7 +26,8 @@ class AuthController extends Controller
         return ResponseEntity::ok(
             (new AuthService)->login(
                 $request->getBaseUrl(),
-                $login
+                $login,
+                $request->getServerParam('remote_addr') ?? '',
             )
         );
     }

@@ -1,10 +1,10 @@
 <div class="page-header">
     <div>
-        <h1>Клиенты</h1>
-        <p>Список instance из административного API.</p>
+        <h1>Clients</h1>
+        <p>List of instances from the admin API.</p>
     </div>
     <div class="page-actions">
-        <button class="btn btn-primary" onclick="showClientModal()"><i class="fas fa-user-plus"></i>Создать клиента</button>
+        <button class="btn btn-primary" onclick="showClientModal()"><i class="fas fa-user-plus"></i>New client</button>
     </div>
 </div>
 

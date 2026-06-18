@@ -13,8 +13,10 @@ class FileRes
         public string $extension,
         public string $hash,
         public bool $deduplicated,
+        public bool $isPublic,
         public string $createdAt,
-        public string $url,
+        public string $privateUrl,
+        public ?string $publicUrl,
     ) {
     }
 }

@@ -49,6 +49,28 @@ class MediaService extends Service
         return $this->serve($record);
     }
 
+    /**
+     * Публичная отдача (без токена): только если файл помечен public.
+     * Несуществующий/приватный/чужой → 404 (не раскрываем существование).
+     */
+    public function downloadPublicById(string $instanceId, string $id): ResponseFile
+    {
+        $record = $this->findRecord($id);
+        if ($record->instance_id !== $instanceId || $record->section !== null || !$record->is_public) {
+            ClientError::throw('Not found', HttpCode::NOT_FOUND);
+        }
+        return $this->serve($record);
+    }
+
+    public function downloadPublicBySection(string $instanceId, string $section, string $id): ResponseFile
+    {
+        $record = $this->findRecord($id);
+        if ($record->instance_id !== $instanceId || $record->section !== $section || !$record->is_public) {
+            ClientError::throw('Not found', HttpCode::NOT_FOUND);
+        }
+        return $this->serve($record);
+    }
+
     private function findRecord(string $id): FileRecord
     {
         $this->recordRepo->where(Qb::eq('id', $id));

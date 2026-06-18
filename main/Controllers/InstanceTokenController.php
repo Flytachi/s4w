@@ -5,9 +5,7 @@ namespace Main\Controllers;
 use Flytachi\Winter\DI\Attribute\Autowired;
 use Flytachi\Winter\K2\Http\Request\Annotation\PathVariable;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestJson;
-use Flytachi\Winter\K2\Http\Request\Annotation\RequestParam;
 use Flytachi\Winter\K2\Http\Request\Annotation\RequestQuery;
-use Flytachi\Winter\K2\Http\Request\Validation\NotBlank;
 use Flytachi\Winter\K2\Http\Request\Validation\Uuid;
 use Flytachi\Winter\K2\Http\Request\Validation\Valid;
 use Flytachi\Winter\K2\Http\Response\ResponseEntity;
@@ -20,6 +18,7 @@ use Flytachi\Winter\K2\Stereotype\Controller;
 use Main\Controllers\Middlewares\AuthMiddleware;
 use Main\Dto\TokenStatus;
 use Main\Requests\Instance\TokenRequest;
+use Main\Requests\Instance\TokenValidateRequest;
 use Main\Requests\ListRequest;
 use Main\Services\InstanceTokenService;
 
@@ -30,13 +29,15 @@ class InstanceTokenController extends Controller
     #[Autowired]
     private InstanceTokenService $service;
 
-    #[GetMapping('validation')]
+    // POST с токеном в теле, а не в query: иначе секрет утекает в access-логи
+    // (nginx пишет $request с query-строкой), историю и прокси.
+    #[PostMapping('validation')]
     public function validation(
         #[PathVariable, Uuid] string $instanceId,
-        #[RequestParam, NotBlank] string $token
+        #[RequestJson, Valid] TokenValidateRequest $request,
     ): ResponseEntity {
         return ResponseEntity::ok(
-            $this->service->validate($instanceId, $token)
+            $this->service->validate($instanceId, $request->token)
         );
     }
 

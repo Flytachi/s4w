@@ -11,11 +11,10 @@ use Flytachi\Winter\K2\Ppa\Mapping\Attributes\Primal\Timestamp;
 use Flytachi\Winter\K2\Ppa\Mapping\Attributes\Primal\Uuid;
 use Flytachi\Winter\K2\Ppa\Mapping\Attributes\Primal\Varchar;
 use Flytachi\Winter\K2\Ppa\Mapping\Constants\FKAction;
-use Main\Repositories\FileBlobRepository;
 use Main\Repositories\InstanceRepository;
 
 #[Table]
-class FileRecord
+class Section
 {
     #[UuidPk]
     public ?string $id = null;
@@ -26,23 +25,10 @@ class FileRecord
         FKAction::CASCADE,
         FKAction::CASCADE
     )]
-    #[Unique(['name'], where: 'section IS NULL')]
-    #[Unique(['section', 'name'], where: 'section IS NOT NULL')]
+    #[Unique(['name'])]
     public string $instance_id;
 
-    // NULL = файл в корне инстанса
     #[Varchar(100)]
-    public ?string $section = null;
-
-    #[Uuid]
-    #[ForeignRepo(
-        FileBlobRepository::class,
-        FKAction::RESTRICT,
-        FKAction::CASCADE
-    )]
-    public string $blob_id;
-
-    #[Varchar(255)]
     public string $name;
 
     #[Boolean]

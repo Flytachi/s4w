@@ -10,7 +10,7 @@ use Flytachi\Winter\K2\Stereotype\Controller;
 #[RequestMapping('web')]
 class MainController extends Controller
 {
-    #[GetMapping('main')]
+    #[GetMapping]
     public function index(): ResponseView
     {
         return $this->page('main/index');

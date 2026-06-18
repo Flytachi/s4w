@@ -14,9 +14,11 @@ use Io\FileManager;
 use Main\Dto\FileRes;
 use Main\Entities\FileBlob;
 use Main\Entities\FileRecord;
+use Main\Entities\Section;
 use Main\Repositories\FileBlobRepository;
 use Main\Repositories\FileRecordRepository;
 use Main\Repositories\InstanceRepository;
+use Main\Repositories\SectionRepository;
 use Main\Requests\File\FileListRequest;
 use Main\Requests\File\FileRequest;
 
@@ -32,6 +34,9 @@ class FileService extends Service
 
     #[Autowired]
     private FileRecordRepository $recordRepo;
+
+    #[Autowired]
+    private SectionRepository $sectionRepo;
 
     public function upload(
         string $instanceId,
@@ -58,6 +63,8 @@ class FileService extends Service
         }
 
         $section = $form->section; // просто строка, без резолва в БД
+        // root → публичный; в секции → наследует видимость секции (новой → приватная).
+        $isPublic = $this->resolveVisibility($instanceId, $section);
 
         $sourceName = (string) ($file['name'] ?? '');
         $finalName = $form->name
@@ -163,6 +170,7 @@ class FileService extends Service
             $record->instance_id = $instanceId;
             $record->section = $section;
             $record->blob_id = $blob->id;
+            $record->is_public = $isPublic;
             $record->created_at = date('Y-m-d H:i:s P');
             $record->updated_at = $record->created_at;
 
@@ -432,19 +440,48 @@ class FileService extends Service
     }
 
     /**
-     * Список уникальных названий секций, использованных в файлах этого инстанса.
-     * Секция = строка на FileRecord, нет отдельной таблицы.
+     * Секции инстанса с их видимостью: [{name, public}, ...].
+     * Секция = строка на FileRecord; видимость = флаг её файлов (поддерживаем
+     * консистентным). bool_or — на случай рассинхрона берём «публичная, если хоть
+     * один файл публичный».
+     */
+    /**
+     * Секции инстанса из таблицы s4w_sections: [{name, public}, ...].
+     * Включая пустые (без файлов) — секции теперь самостоятельны.
      */
     public function listSections(string $instanceId): array
     {
-        $this->recordRepo
-            ->select('DISTINCT section')
-            ->where(Qb::and(
-                Qb::eq('instance_id', $instanceId),
-                Qb::isNotNull('section'),
-            ));
-        $rows = $this->recordRepo->findAll();
-        return array_map(fn($r) => $r->section, $rows);
+        $this->sectionRepo
+            ->select('name, is_public')
+            ->where(Qb::eq('instance_id', $instanceId))
+            ->orderBy('name');
+        $rows = $this->sectionRepo->findAll();
+        return array_map(
+            fn($r) => ['name' => $r->name, 'public' => (bool) $r->is_public],
+            $rows,
+        );
+    }
+
+    /**
+     * Создать секцию (папку). Может быть пустой. Видимость задаётся при создании.
+     */
+    public function createSection(string $instanceId, string $name, bool $isPublic): void
+    {
+        $now = date('Y-m-d H:i:s P');
+        $section = new Section();
+        $section->instance_id = $instanceId;
+        $section->name = $name;
+        $section->is_public = $isPublic;
+        $section->created_at = $now;
+        $section->updated_at = $now;
+        try {
+            $this->sectionRepo->insert($section);
+        } catch (\Throwable $e) {
+            if ($this->isUniqueViolation($e)) {
+                ClientError::throw('Секция с таким именем уже есть', HttpCode::CONFLICT);
+            }
+            throw $e;
+        }
     }
 
     public function getAll(string $instanceId, FileListRequest $request, string $baseUrl): WrapResult
@@ -595,6 +632,157 @@ class FileService extends Service
         }
     }
 
+    /**
+     * Переименование файла. UNIQUE(name|section,name) → при конфликте 409.
+     */
+    public function rename(string $instanceId, string $id, string $newName, string $baseUrl): FileRes
+    {
+        $record = $this->findRecord($instanceId, $id);
+        if ($record->name !== $newName) {
+            try {
+                $this->recordRepo->update(
+                    ['name' => $newName, 'updated_at' => date('Y-m-d H:i:s P')],
+                    Qb::eq('id', $record->id),
+                );
+            } catch (\Throwable $e) {
+                if ($this->isUniqueViolation($e)) {
+                    ClientError::throw('Файл с таким именем здесь уже есть', HttpCode::CONFLICT);
+                }
+                throw $e;
+            }
+            $record->name = $newName;
+        }
+        return $this->buildRes($instanceId, $record, $this->findBlob($record->blob_id), false, $baseUrl);
+    }
+
+    /**
+     * Перемещение файла между секциями. null/'' = корень. Конфликт имени в
+     * целевой секции → 409.
+     */
+    public function move(string $instanceId, string $id, ?string $newSection, string $baseUrl): FileRes
+    {
+        $record = $this->findRecord($instanceId, $id);
+        $target = ($newSection === '' || $newSection === null) ? null : $newSection;
+        if ($record->section !== $target) {
+            // Видимость следует за назначением: root → public, секция → её флаг.
+            $isPublic = $this->resolveVisibility($instanceId, $target);
+            try {
+                $this->recordRepo->update(
+                    [
+                        'section' => $target,
+                        'is_public' => $isPublic,
+                        'updated_at' => date('Y-m-d H:i:s P'),
+                    ],
+                    Qb::eq('id', $record->id),
+                );
+            } catch (\Throwable $e) {
+                if ($this->isUniqueViolation($e)) {
+                    ClientError::throw('В целевой секции уже есть файл с таким именем', HttpCode::CONFLICT);
+                }
+                throw $e;
+            }
+            $record->section = $target;
+            $record->is_public = $isPublic;
+        }
+        return $this->buildRes($instanceId, $record, $this->findBlob($record->blob_id), false, $baseUrl);
+    }
+
+    /**
+     * Переименование секции = массовый UPDATE всех записей инстанса с section=from.
+     * Если в целевой секции уже есть одноимённые файлы — UNIQUE 409 (мерж запрещён).
+     */
+    public function renameSection(string $instanceId, string $from, string $to): void
+    {
+        if ($from === $to) {
+            return;
+        }
+        $this->requireSection($instanceId, $from);
+        $now = date('Y-m-d H:i:s P');
+        try {
+            $this->sectionRepo->update(
+                ['name' => $to, 'updated_at' => $now],
+                Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('name', $from)),
+            );
+        } catch (\Throwable $e) {
+            if ($this->isUniqueViolation($e)) {
+                ClientError::throw('Секция с таким именем уже есть', HttpCode::CONFLICT);
+            }
+            throw $e;
+        }
+        // переносим файлы в новое имя секции (в "to" файлов нет — секция была новой)
+        $this->recordRepo->update(
+            ['section' => $to, 'updated_at' => $now],
+            Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('section', $from)),
+        );
+    }
+
+    /**
+     * Удаление секции: все файлы внутри (с GC через delete()) + строка секции.
+     */
+    public function deleteSection(string $instanceId, string $section): int
+    {
+        $this->recordRepo->where(Qb::and(
+            Qb::eq('instance_id', $instanceId),
+            Qb::eq('section', $section),
+        ));
+        $records = $this->recordRepo->findAll();
+        $count = 0;
+        foreach ($records as $record) {
+            $this->delete($instanceId, $record->id);
+            $count++;
+        }
+        $this->sectionRepo->delete(
+            Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('name', $section)),
+        );
+        return $count;
+    }
+
+    /**
+     * Переключить видимость секции: обновляем авторитетную строку секции + денорм.
+     * копию is_public на всех её файлах (для быстрой отдачи /o).
+     */
+    public function setSectionVisibility(string $instanceId, string $section, bool $public): void
+    {
+        $this->requireSection($instanceId, $section);
+        $now = date('Y-m-d H:i:s P');
+        $this->sectionRepo->update(
+            ['is_public' => $public, 'updated_at' => $now],
+            Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('name', $section)),
+        );
+        $this->recordRepo->update(
+            ['is_public' => $public, 'updated_at' => $now],
+            Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('section', $section)),
+        );
+    }
+
+    /**
+     * Видимость файла по назначению: root → public; секция → её авторитетный флаг.
+     * Секция обязана существовать (строгий select, без автосоздания).
+     */
+    private function resolveVisibility(string $instanceId, ?string $section): bool
+    {
+        if ($section === null) {
+            return true;
+        }
+        return $this->requireSection($instanceId, $section)->is_public;
+    }
+
+    /**
+     * Находит секцию или бросает 422 (нет автосоздания).
+     */
+    private function requireSection(string $instanceId, string $name): Section
+    {
+        $this->sectionRepo->where(Qb::and(
+            Qb::eq('instance_id', $instanceId),
+            Qb::eq('name', $name),
+        ));
+        $section = $this->sectionRepo->find();
+        if (!$section) {
+            ClientError::throw("Секция «{$name}» не найдена", HttpCode::UNPROCESSABLE_ENTITY);
+        }
+        return $section;
+    }
+
     private function findRecord(string $instanceId, string $id): FileRecord
     {
         $this->recordRepo->where(Qb::and(
@@ -625,6 +813,7 @@ class FileService extends Service
         bool $deduplicated,
         string $baseUrl,
     ): FileRes {
+        $isPublic = (bool) $record->is_public;
         return new FileRes(
             id: $record->id,
             name: $record->name,
@@ -634,27 +823,39 @@ class FileService extends Service
             extension: $blob->extension,
             hash: $blob->hash,
             deduplicated: $deduplicated,
+            isPublic: $isPublic,
             createdAt: $record->created_at,
-            url: $this->buildUrl($instanceId, $record->section, $record->id, $baseUrl),
+            privateUrl: $this->privateUrl($instanceId, $record->section, $record->id, $baseUrl),
+            publicUrl: $isPublic ? $this->publicUrl($instanceId, $record->section, $record->id, $baseUrl) : null,
         );
     }
 
+    private function urlTail(?string $section, string $id): string
+    {
+        return $section === null ? $id : rawurlencode($section) . '/' . $id;
+    }
+
     /**
-     * URL для запроса файла обратно. Клиент должен слать Bearer токен.
-     *   root:    {baseUrl}/media/{id}
-     *   section: {baseUrl}/media/{section}/{id}
-     * Под admin-mode (path-based scoping) добавляется префикс /s4w/instances/{id}.
+     * Приватный URL (требует авторизацию):
+     *   admin  → {baseUrl}/s4w/instances/{id}/media/[section/]{id}  (JWT)
+     *   tenant → {baseUrl}/p/[section/]{id}                          (instance-токен)
      */
-    private function buildUrl(string $instanceId, ?string $section, string $id, string $baseUrl): string
+    private function privateUrl(string $instanceId, ?string $section, string $id, string $baseUrl): string
     {
         $base = rtrim($baseUrl, '/');
-        $path = $section === null
-            ? '/media/' . $id
-            : '/media/' . rawurlencode($section) . '/' . $id;
-        if ($this->adminMode) {
-            $path = '/s4w/instances/'. $instanceId . $path;
-        }
-        return $base . $path;
+        $tail = $this->urlTail($section, $id);
+        return $this->adminMode
+            ? $base . '/s4w/instances/' . $instanceId . '/media/' . $tail
+            : $base . '/p/' . $tail;
+    }
+
+    /**
+     * Публичный URL (без токена): {baseUrl}/o/{instanceId}/[section/]{id}.
+     * Возвращается только для публичных файлов (root + публичные секции).
+     */
+    private function publicUrl(string $instanceId, ?string $section, string $id, string $baseUrl): string
+    {
+        return rtrim($baseUrl, '/') . '/o/' . $instanceId . '/' . $this->urlTail($section, $id);
     }
 
     public function adminModeOn(): void

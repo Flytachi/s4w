@@ -1,0 +1,376 @@
+{
+  "info": {
+    "_postman_id": "a5ad3f0e-d20e-4312-96f5-60a72fafe093",
+    "name": "S4W — API",
+    "description": "Integration API for the s4w file store (no admin panel).\n\n## Authorization\n- **Tenant** — instance token in `Authorization: Bearer {{instanceToken}}`. instanceId is taken FROM the token (not passed in the path). The token is created in the admin panel and must be **ACTIVE**.\n- **Public** — no authorization. Only public files (root + public sections): `/o/{instanceId}/...`.\n\n## Getting started\n1. Get an instance token in the panel and put it into `{{instanceToken}}`.\n2. For public links, fill `{{instanceId}}`.\n\n`{{fileId}}` is captured automatically after `Upload file`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "15016352",
+    "_collection_link": "https://go.postman.co/collection/15016352-a5ad3f0e-d20e-4312-96f5-60a72fafe093?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Files",
+      "item": [
+        {
+          "name": "List sections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/files/sections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "files",
+                "sections"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/files?limit=50&page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "files"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "section",
+                  "value": "",
+                  "description": "empty = root; otherwise section name",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "search by file name",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload file",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "value": null
+                },
+                {
+                  "key": "name",
+                  "value": "",
+                  "type": "text",
+                  "description": "optional name; empty = file name",
+                  "disabled": true
+                },
+                {
+                  "key": "section",
+                  "value": "",
+                  "type": "text",
+                  "description": "optional existing section name (no auto-create -> 422 if missing); empty = root (public)",
+                  "disabled": true
+                },
+                {
+                  "key": "compress",
+                  "value": "",
+                  "type": "text",
+                  "description": "optional 0..100, images only",
+                  "disabled": true
+                },
+                {
+                  "key": "webp",
+                  "value": "",
+                  "type": "text",
+                  "description": "optional 1 = convert to webp (images only)",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/files",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "files"
+              ]
+            },
+            "description": "multipart/form-data. Size limit — env UPLOAD_MAX_FILESIZE. root -> public; a file in a section inherits its visibility. Response contains id, isPublic, privateUrl, publicUrl. Saves {{fileId}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Get file",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/files/:fileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "files",
+                ":fileId"
+              ],
+              "variable": [
+                {
+                  "key": "fileId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete file",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/files/:fileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "files",
+                ":fileId"
+              ],
+              "variable": [
+                {
+                  "key": "fileId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Instance files. Bearer {{instanceToken}} — instanceId is resolved from the token."
+    },
+    {
+      "name": "Media (private)",
+      "item": [
+        {
+          "name": "Download root file",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/p/:fileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "p",
+                ":fileId"
+              ],
+              "variable": [
+                {
+                  "key": "fileId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Download file in section",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/p/:section/:fileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "p",
+                ":section",
+                ":fileId"
+              ],
+              "variable": [
+                {
+                  "key": "section",
+                  "value": ""
+                },
+                {
+                  "key": "fileId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Serve file content with the instance token. instanceId — from the token."
+    },
+    {
+      "name": "Public (no auth)",
+      "item": [
+        {
+          "name": "Public root file",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/o/{{instanceId}}/:fileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "o",
+                "{{instanceId}}",
+                ":fileId"
+              ],
+              "variable": [
+                {
+                  "key": "fileId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Public file in section",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/o/{{instanceId}}/:section/:fileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "o",
+                "{{instanceId}}",
+                ":section",
+                ":fileId"
+              ],
+              "variable": [
+                {
+                  "key": "section",
+                  "value": ""
+                },
+                {
+                  "key": "fileId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Public serving WITHOUT authorization. Only files with isPublic=true (root + public sections). instanceId+id are two UUIDs, enumeration is impossible. Private file -> 404.",
+      "auth": {
+        "type": "noauth"
+      }
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{instanceToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8007"
+    },
+    {
+      "key": "instanceId",
+      "value": "",
+      "description": "Needed only for public links /o/{instanceId}/..."
+    },
+    {
+      "key": "instanceToken",
+      "value": "",
+      "description": "Instance token (s4w_...), ACTIVE. Created in the panel."
+    }
+  ]
+}

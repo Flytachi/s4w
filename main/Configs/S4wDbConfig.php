@@ -4,10 +4,12 @@ namespace Main\Configs;
 
 use Flytachi\Winter\Cdo\Config\DbConfig;
 use Flytachi\Winter\Cdo\Config\PgDbConfig;
+use Flytachi\Winter\K2\Ppa\Mapping\Attributes\Config\Migratable;
 use Flytachi\Winter\K2\Ppa\Pool\PpaPoolConfigInterface;
 use Flytachi\Winter\K2\Ppa\Pool\PpaPoolTrait;
 use Flytachi\Winter\K2\Ppa\PpaCallTrait;
 
+#[Migratable]
 class S4wDbConfig extends PgDbConfig implements PpaPoolConfigInterface
 {
     use PpaCallTrait;
