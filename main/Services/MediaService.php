@@ -21,7 +21,7 @@ class MediaService extends Service
     #[Autowired]
     private FileBlobRepository $blobRepo;
 
-    public function downloadById(string $instanceId, string $id): ResponseFile
+    public function downloadById(string $instanceId, string $id, bool $download = false): ResponseFile
     {
         $record = $this->findRecord($id);
 
@@ -32,10 +32,10 @@ class MediaService extends Service
             ClientError::throw('Not a root file', HttpCode::NOT_FOUND);
         }
 
-        return $this->serve($record);
+        return $this->serve($record, $download);
     }
 
-    public function downloadBySection(string $instanceId, string $section, string $id): ResponseFile
+    public function downloadBySection(string $instanceId, string $section, string $id, bool $download = false): ResponseFile
     {
         $record = $this->findRecord($id);
 
@@ -46,29 +46,29 @@ class MediaService extends Service
             ClientError::throw('Not found', HttpCode::NOT_FOUND);
         }
 
-        return $this->serve($record);
+        return $this->serve($record, $download);
     }
 
     /**
      * Публичная отдача (без токена): только если файл помечен public.
      * Несуществующий/приватный/чужой → 404 (не раскрываем существование).
      */
-    public function downloadPublicById(string $instanceId, string $id): ResponseFile
+    public function downloadPublicById(string $instanceId, string $id, bool $download = false): ResponseFile
     {
         $record = $this->findRecord($id);
         if ($record->instance_id !== $instanceId || $record->section !== null || !$record->is_public) {
             ClientError::throw('Not found', HttpCode::NOT_FOUND);
         }
-        return $this->serve($record);
+        return $this->serve($record, $download);
     }
 
-    public function downloadPublicBySection(string $instanceId, string $section, string $id): ResponseFile
+    public function downloadPublicBySection(string $instanceId, string $section, string $id, bool $download = false): ResponseFile
     {
         $record = $this->findRecord($id);
         if ($record->instance_id !== $instanceId || $record->section !== $section || !$record->is_public) {
             ClientError::throw('Not found', HttpCode::NOT_FOUND);
         }
-        return $this->serve($record);
+        return $this->serve($record, $download);
     }
 
     private function findRecord(string $id): FileRecord
@@ -81,7 +81,7 @@ class MediaService extends Service
         return $record;
     }
 
-    private function serve(FileRecord $record): ResponseFile
+    private function serve(FileRecord $record, bool $forceAttachment = false): ResponseFile
     {
         $this->blobRepo->where(Qb::eq('id', $record->blob_id));
         $blob = $this->blobRepo->find();
@@ -93,12 +93,34 @@ class MediaService extends Service
             ClientError::throw('Blob file vanished', HttpCode::INTERNAL_SERVER_ERROR);
         }
 
+        // ?download=1 → всегда attachment; иначе inline только для безопасно
+        // отображаемых типов, остальное (zip/office/данные + html/svg) — attachment.
+        $isAttachment = $forceAttachment || !$this->isInlineMime($blob->mime_type);
+
         return ResponseFile::binary(
             data: '',
             fileName: $this->ensureNameExtension($record->name, $blob->extension),
             mimeType: $blob->mime_type,
-            isAttachment: false,
+            isAttachment: $isAttachment,
         )->header('X-Accel-Redirect', $this->internalUri($blob->instance_id, $blob->hash));
+    }
+
+    /**
+     * Какие mime безопасно отдавать inline (показывать в браузере).
+     * text/html и image/svg+xml СОЗНАТЕЛЬНО не inline — могут нести скрипт
+     * (stored-XSS в origin сервиса), отдаём их attachment.
+     */
+    private function isInlineMime(string $mime): bool
+    {
+        $mime = strtolower(trim($mime));
+        if ($mime === 'image/svg+xml') {
+            return false;
+        }
+        return str_starts_with($mime, 'image/')
+            || str_starts_with($mime, 'video/')
+            || str_starts_with($mime, 'audio/')
+            || $mime === 'application/pdf'
+            || $mime === 'text/plain';
     }
 
     /**

@@ -67,6 +67,14 @@ RUN printf '#!/bin/sh\nwhile [ ! -S /dev/log ]; do sleep 1; done\nexec nginx -g 
 RUN printf '#!/bin/sh\nexec syslogd -n -O /dev/stdout\n' > /etc/service/syslog/run \
     && chmod +x /etc/service/syslog/run
 
+# cron + crond (daily GC of orphan storage/chest folders, 01:00)
+RUN mkdir -p /var/spool/cron/crontabs
+RUN echo "0 1 * * * cd /var/www/html && su-exec winter php call sc io.scripts.orphanFolderGc" >> /var/spool/cron/crontabs/root
+RUN echo "30 1 * * * cd /var/www/html && su-exec winter php call sc io.scripts.orphanBlobGc" >> /var/spool/cron/crontabs/root
+RUN mkdir -p /etc/service/cron
+RUN printf '#!/bin/sh\nexec crond -f -l 8\n' > /etc/service/cron/run \
+    && chmod +x /etc/service/cron/run
+
 # Copy vendor from builder (composer not included)
 COPY --from=builder /var/www/html/vendor ./vendor
 

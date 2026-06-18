@@ -17,14 +17,14 @@
     "require": {
         "php": ">=8.5",
         "flytachi/winter-kernel": "^3.0",
+        "monolog/monolog": "@stable",
         "flytachi/jwt": "^1.0",
         "ext-redis": "*",
         "ext-gd": "*",
         "ext-fileinfo": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "@stable",
-        "monolog/monolog": "@stable"
+        "phpunit/phpunit": "@stable"
     },
     "authors": []
 }

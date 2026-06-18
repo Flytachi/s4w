@@ -43,6 +43,10 @@ if [ "$genflag" = "1" ]; then
     chmod 600 "$SECRETS_FILE" 2>/dev/null || true
 fi
 
+# ── Логирование: дефолты, если не заданы ──────────────────────────────────────
+export LOG_LEVEL="${LOG_LEVEL:-warning}"
+export LOG_OUTPUT="${LOG_OUTPUT:-syslog}"
+
 # ── 2. БД: внешняя (DB_HOST задан) или встроенный PostgreSQL ───────────────────
 PGDATA=/var/lib/postgresql/data
 if [ -z "$DB_HOST" ]; then

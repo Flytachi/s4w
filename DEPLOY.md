@@ -127,8 +127,8 @@ docker compose exec s4w sh -c "cd /var/www/html && ./call db migrate"
 | `PHP_MAX_INPUT_TIME` | `300` | Optional (seconds). |
 | `TIME_ZONE` | `UTC` | |
 | `DEBUG` | `false` | Keep `false` in production (debug responses leak internals). |
-| `LOG_LEVEL` | `info` | `debug\|info\|warning\|error\|…`; empty disables logging. |
-| `LOG_OUTPUT` | `auto` | `auto\|stdout\|stderr\|syslog\|file`. |
+| `LOG_LEVEL` | `warning` | `debug\|info\|warning\|error\|…`; empty disables logging. |
+| `LOG_OUTPUT` | `syslog` | `auto\|stdout\|stderr\|syslog\|file`. `syslog` → container stdout. |
 
 ---
 

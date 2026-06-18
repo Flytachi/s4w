@@ -3,6 +3,7 @@
 namespace Api;
 
 use Flytachi\Winter\DI\Attribute\Autowired;
+use Flytachi\Winter\K2\Http\Contracts\HttpRequest;
 use Flytachi\Winter\K2\Http\Request\Annotation\PathVariable;
 use Flytachi\Winter\K2\Http\Request\Validation\Uuid;
 use Flytachi\Winter\K2\Http\Response\ResponseFile;
@@ -27,8 +28,9 @@ class PublicMediaController extends Controller
     public function rootDownload(
         #[PathVariable, Uuid] string $instanceId,
         #[PathVariable, Uuid] string $id,
+        HttpRequest $http,
     ): ResponseFile {
-        return $this->service->downloadPublicById($instanceId, $id);
+        return $this->service->downloadPublicById($instanceId, $id, self::isDownload($http));
     }
 
     #[GetMapping('{instanceId}/{section}/{id}')]
@@ -36,7 +38,13 @@ class PublicMediaController extends Controller
         #[PathVariable, Uuid] string $instanceId,
         #[PathVariable] string $section,
         #[PathVariable, Uuid] string $id,
+        HttpRequest $http,
     ): ResponseFile {
-        return $this->service->downloadPublicBySection($instanceId, $section, $id);
+        return $this->service->downloadPublicBySection($instanceId, $section, $id, self::isDownload($http));
+    }
+
+    private static function isDownload(HttpRequest $http): bool
+    {
+        return ($http->getQueryParams()['download'] ?? null) === '1';
     }
 }
