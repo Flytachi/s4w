@@ -25,8 +25,9 @@ RUN apk update && apk add --no-cache php85 \
     php85-openssl php85-sockets php85-gd \
     nginx runit procps bash
 
-#  =>  PostgreSql
-RUN apk add --no-cache php85-pgsql php85-pdo_pgsql
+#  =>  PostgreSql (PHP-драйверы + встроенный сервер для локального fallback)
+RUN apk add --no-cache php85-pgsql php85-pdo_pgsql \
+    postgresql postgresql-client su-exec
 #  =>  Mysql / MariaDb
 #RUN apk add --no-cache php85-mysqli php85-pdo_mysql php85-mysqlnd
 #  =>  Redis

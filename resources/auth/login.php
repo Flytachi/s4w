@@ -64,7 +64,7 @@
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer IRci4Fkjcc348DHDudeEY3dCEu38xEUWm95cEICeuEEFUncur4842',
+                'Authorization': 'Bearer <?= env('TOKEN', '') ?>',
             },
             body: JSON.stringify({
                 username: form.username.value,

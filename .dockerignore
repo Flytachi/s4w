@@ -19,9 +19,12 @@ vendor
 # Environment & secrets
 .env
 
-# Storage (logs, cache)
+# Storage — пользовательские данные не должны попадать в публичный образ
 storage/logs
 storage/cache
+storage/chest
+storage/runnable
+storage/.runtime_secrets
 
 # Tests
 phpunit.xml
