@@ -4,7 +4,7 @@ Single-container file store (PHP + nginx + optional bundled PostgreSQL).
 Configuration is **entirely via environment variables** — no files to edit.
 
 - **Web panel:** `http://localhost:<port>/web`
-- **API:** `http://localhost:<port>` — Postman collection in [`docs/re.json`](docs/re.json)
+- **API:** `http://localhost:<port>` — Postman collection in [`docs/collection.json`](docs/collection.json)
 - **Image:** `flytachi/s4w:latest`
 
 It can run with a **bundled PostgreSQL** (zero setup) or your **own PostgreSQL**
