@@ -847,13 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        document.getElementById('copy-created-token').addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(token);
-                showAlert('success', 'Copied', 'Token copied to clipboard');
-            } catch (_) {
-                showAlert('warning', 'Failed to copy', 'Copy the token manually');
-            }
+        document.getElementById('copy-created-token').addEventListener('click', () => {
+            copyText(token, 'Token copied to clipboard');
         });
     }
 
