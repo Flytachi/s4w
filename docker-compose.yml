@@ -8,7 +8,7 @@ services:
         DISABLE_OPCACHE: "true"
     environment:
       - COMPOSE_BAKE=true
-      - UPLOAD_MAX_FILESIZE=200M
+      - UPLOAD_HOST=http://localhost:8007
       - UPLOAD_MAX_FILESIZE=200M
 #      - WINTER_KEY=b4ab8a126015321e98f0fdd013b3aa9edce04f3b2150d83fe3868dbd72d0221c
 #      - TOKEN=IRci4Fkjcc348DHDudeEY3dCEu38xEUWm95cEICeuEEFUncur4842

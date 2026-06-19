@@ -30,15 +30,15 @@ It can run with a **bundled PostgreSQL** (zero setup) or your **own PostgreSQL**
 
 **Quick try (no persistence — for testing only):**
 ```bash
-docker run -d --name s4w -p 8080:80 \
+docker run -d --name s4w -p 9090:80 \
   -e ADMIN_LOGIN=admin -e ADMIN_PASSWORD=change-me \
   flytachi/s4w:latest
-# http://localhost:8080/web  → admin / change-me
+# http://localhost:9090/web  → admin / change-me
 ```
 
 **Persistent (bundled DB + volumes — recommended):**
 ```bash
-docker run -d --name s4w -p 8080:80 \
+docker run -d --name s4w -p 9090:80 \
   -e ADMIN_LOGIN=admin -e ADMIN_PASSWORD=change-me \
   -e UPLOAD_MAX_FILESIZE=200M \
   -v s4w_storage:/var/www/html/storage \
@@ -49,7 +49,7 @@ docker run -d --name s4w -p 8080:80 \
 
 **External PostgreSQL:**
 ```bash
-docker run -d --name s4w -p 8080:80 \
+docker run -d --name s4w -p 9090:80 \
   -e DB_HOST=db.example.com -e DB_PORT=5432 \
   -e DB_NAME=s4w -e DB_USER=s4w -e DB_PASS=super-secret \
   -e ADMIN_LOGIN=admin -e ADMIN_PASSWORD=change-me \
@@ -72,7 +72,7 @@ services:
   s4w:
     image: flytachi/s4w:latest
     ports:
-      - "8080:80"
+      - "9090:80"
     environment:
       ADMIN_LOGIN: admin
       ADMIN_PASSWORD: change-me
@@ -87,7 +87,7 @@ services:
   s4w:
     image: flytachi/s4w:latest
     ports:
-      - "8080:80"
+      - "9090:80"
     environment:
       ADMIN_LOGIN: admin
       ADMIN_PASSWORD: change-me
@@ -108,7 +108,7 @@ services:
   s4w:
     image: flytachi/s4w:latest
     ports:
-      - "8080:80"
+      - "9090:80"
     environment:
       DB_HOST: db.example.com
       DB_PORT: "5432"
@@ -149,6 +149,7 @@ docker compose exec s4w sh -c "cd /var/www/html && php call db migrate"
 | `WINTER_KEY` | _auto_ | JWT signing key. Auto-generated if unset (persisted to `storage`). |
 | `TOKEN` | _auto_ | Static bearer for the login endpoint. Auto-generated if unset. |
 | `UPLOAD_MAX_FILESIZE` | `100M` | Max upload size; drives php + nginx limits. |
+| `UPLOAD_HOST` | _(request host)_ | Base URL used in returned `privateUrl`/`publicUrl` (e.g. `https://files.example.com`). Include the scheme; this host must route to the service. |
 | `PHP_MEMORY_LIMIT` | `256M` | Optional. |
 | `PHP_MAX_EXECUTION_TIME` | `300` | Optional (seconds). |
 | `PHP_MAX_INPUT_TIME` | `300` | Optional (seconds). |
@@ -163,7 +164,7 @@ docker compose exec s4w sh -c "cd /var/www/html && php call db migrate"
 
 ```bash
 docker build -t s4w:local .
-docker run -d -p 8080:80 -e ADMIN_LOGIN=admin -e ADMIN_PASSWORD=change-me s4w:local
+docker run -d -p 9090:80 -e ADMIN_LOGIN=admin -e ADMIN_PASSWORD=change-me s4w:local
 ```
 > `--build-arg DISABLE_OPCACHE=true` only for local dev (opcache off). Default is prod.
 
@@ -194,3 +195,7 @@ Maintenance GC runs daily inside the container via cron:
 - **Login brute-force** is throttled (5 attempts / 15 min → HTTP 429).
 - **Public URLs** `/o/{instanceId}/...` need no auth — only files in `root` and in
   sections marked *public* are served there.
+- **`UPLOAD_HOST`** rewrites the host in the `privateUrl`/`publicUrl` fields returned by
+  the API (e.g. serve files via a CDN / custom domain like `https://files.example.com`).
+  It only changes the returned links — that host must proxy to this container, and the
+  value must include the scheme (`https://…`). Leave unset to use the request host.

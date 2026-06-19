@@ -38,6 +38,14 @@ class FileService extends Service
     #[Autowired]
     private SectionRepository $sectionRepo;
 
+    /**
+     * Media-кэш отдачи (см. MediaCache). Инвалидируется при любой мутации
+     * метаданных, влияющих на serve(): rename/move/visibility/delete/deleteSection.
+     * upload НЕ инвалидирует — новый id не мог попасть в кэш.
+     */
+    #[Autowired]
+    private MediaCache $cache;
+
     public function upload(
         string $instanceId,
         array $file,
@@ -630,6 +638,9 @@ class FileService extends Service
         if ($blobToUnlink !== null) {
             FileManager::blobDelete($blobToUnlink->instance_id, $blobToUnlink->hash);
         }
+
+        // запись удалена → её кэш отдачи недопустим (иначе /o отдаст удалённый файл)
+        $this->cache->invalidate($instanceId);
     }
 
     /**
@@ -651,6 +662,7 @@ class FileService extends Service
                 throw $e;
             }
             $record->name = $newName;
+            $this->cache->invalidate($instanceId); // кэш хранит имя для filename отдачи
         }
         return $this->buildRes($instanceId, $record, $this->findBlob($record->blob_id), false, $baseUrl);
     }
@@ -683,6 +695,9 @@ class FileService extends Service
             }
             $record->section = $target;
             $record->is_public = $isPublic;
+            // section и is_public кэшируются → старый кэш мог бы отдать файл по
+            // прежней секции/видимости (в т.ч. приватный через /o)
+            $this->cache->invalidate($instanceId);
         }
         return $this->buildRes($instanceId, $record, $this->findBlob($record->blob_id), false, $baseUrl);
     }
@@ -714,6 +729,8 @@ class FileService extends Service
             ['section' => $to, 'updated_at' => $now],
             Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('section', $from)),
         );
+        // у файлов сменилось section → старый кэш дал бы 404 по новому имени секции
+        $this->cache->invalidate($instanceId);
     }
 
     /**
@@ -753,6 +770,9 @@ class FileService extends Service
             ['is_public' => $public, 'updated_at' => $now],
             Qb::and(Qb::eq('instance_id', $instanceId), Qb::eq('section', $section)),
         );
+        // КРИТИЧНО: public→private должен мгновенно убрать файлы секции из /o.
+        // Бамп версии разом обесценивает кэш всех файлов секции (без перечисления id).
+        $this->cache->invalidate($instanceId);
     }
 
     /**
@@ -825,8 +845,12 @@ class FileService extends Service
             deduplicated: $deduplicated,
             isPublic: $isPublic,
             createdAt: $record->created_at,
-            privateUrl: $this->privateUrl($instanceId, $record->section, $record->id, $baseUrl),
-            publicUrl: $isPublic ? $this->publicUrl($instanceId, $record->section, $record->id, $baseUrl) : null,
+            privateUrl: $this->privateUrl(
+                $instanceId, $record->section, $record->id, env('UPLOAD_HOST', $baseUrl)
+            ),
+            publicUrl: $isPublic ?
+                $this->publicUrl($instanceId, $record->section, $record->id, env('UPLOAD_HOST', $baseUrl))
+                : null,
         );
     }
 

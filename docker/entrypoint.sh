@@ -106,4 +106,6 @@ EOF
 sed -i "s/client_max_body_size .*/client_max_body_size ${POST_MAX_SIZE};/" /etc/nginx/nginx.conf
 echo "[entrypoint] upload_max_filesize=${UPLOAD_MAX_FILESIZE} post_max_size=${POST_MAX_SIZE}"
 
+su-exec winter sh -c "cd /var/www/html && ./call storage clean -c"
+
 exec runsvdir /etc/service

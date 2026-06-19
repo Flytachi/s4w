@@ -69,6 +69,7 @@ RUN printf '#!/bin/sh\nexec syslogd -n -O /dev/stdout\n' > /etc/service/syslog/r
 
 # cron + crond (daily GC of orphan storage/chest folders, 01:00)
 RUN mkdir -p /var/spool/cron/crontabs
+RUN echo "0 1 * * * cd /var/www/html && su-exec winter php call storage clean -c" >> /var/spool/cron/crontabs/root
 RUN echo "0 1 * * * cd /var/www/html && su-exec winter php call sc io.scripts.orphanFolderGc" >> /var/spool/cron/crontabs/root
 RUN echo "30 1 * * * cd /var/www/html && su-exec winter php call sc io.scripts.orphanBlobGc" >> /var/spool/cron/crontabs/root
 RUN mkdir -p /etc/service/cron
