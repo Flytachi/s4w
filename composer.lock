@@ -311,16 +311,16 @@
         },
         {
             "name": "flytachi/winter-kernel",
-            "version": "v3.5.3",
+            "version": "v3.6.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Flytachi/winter-kernel.git",
-                "reference": "a24014da310ff405bef6348239e26807c55bed08"
+                "reference": "d246c14f664dd0eaea62f5b556e58375ac2f1ec0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Flytachi/winter-kernel/zipball/a24014da310ff405bef6348239e26807c55bed08",
-                "reference": "a24014da310ff405bef6348239e26807c55bed08",
+                "url": "https://api.github.com/repos/Flytachi/winter-kernel/zipball/d246c14f664dd0eaea62f5b556e58375ac2f1ec0",
+                "reference": "d246c14f664dd0eaea62f5b556e58375ac2f1ec0",
                 "shasum": ""
             },
             "require": {
@@ -386,7 +386,7 @@
                 "issues": "https://github.com/Flytachi/winter-kernel/issues",
                 "source": "https://github.com/flytachi/winter-kernel"
             },
-            "time": "2026-06-10T12:24:20+00:00"
+            "time": "2026-06-19T12:11:29+00:00"
         },
         {
             "name": "flytachi/winter-logger",
