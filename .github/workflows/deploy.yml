@@ -2,9 +2,8 @@ name: Build & Push image (Docker Hub)
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
-  workflow_dispatch:
+    tags: [ 'v*' ]   # пушим образ ТОЛЬКО по релизным тегам v* (не на каждый push в main)
+  workflow_dispatch: # ручной запуск — выбирай тег как ref, иначе semver-тегов не будет
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -35,9 +34,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/s4w
+          # latest=auto (дефолтный flavor) сам ставит тег `latest` на не-prerelease
+          # semver-теги. Тег v1.2.3 → образы 1.2.3, 1.2 и latest.
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=,format=short
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
